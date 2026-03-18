@@ -19,6 +19,7 @@ export default function EmployeeForm({ employee, onSave, onClose }: EmployeeForm
     status: employee?.status ?? 'Active',
     phone: employee?.phone ?? '',
     privateId: employee?.privateId ?? '',
+    role: employee?.role ?? '',
   });
 
   function handleSubmit(e: React.FormEvent) {
@@ -77,6 +78,10 @@ export default function EmployeeForm({ employee, onSave, onClose }: EmployeeForm
             <div>
               <label style={labelStyle}>Phone Number</label>
               <input style={inputStyle} value={form.phone ?? ''} onChange={e => setForm({...form, phone: e.target.value})} placeholder="555-0101" />
+            </div>
+            <div>
+              <label style={labelStyle}>Role</label>
+              <input style={inputStyle} value={form.role ?? ''} onChange={e => setForm({...form, role: e.target.value})} placeholder="e.g. Commander" />
             </div>
             <div>
               <label style={labelStyle}>Status</label>

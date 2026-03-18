@@ -8,9 +8,9 @@ interface EmployeeListProps {
   onUpdate: (employees: Employee[]) => void;
 }
 
-type ColKey = 'check' | 'drag' | 'id' | 'name' | 'email' | 'phone' | 'privateId' | 'status';
+type ColKey = 'check' | 'drag' | 'id' | 'name' | 'email' | 'phone' | 'privateId' | 'role' | 'status';
 type SortDir = 'asc' | 'desc';
-type SortableCol = 'id' | 'name' | 'email' | 'phone' | 'privateId' | 'status';
+type SortableCol = 'id' | 'name' | 'email' | 'phone' | 'privateId' | 'role' | 'status';
 
 const ALL_COLUMNS: { key: ColKey; label: string }[] = [
   { key: 'check',     label: '' },
@@ -20,10 +20,11 @@ const ALL_COLUMNS: { key: ColKey; label: string }[] = [
   { key: 'email',     label: 'Email' },
   { key: 'phone',     label: 'Phone Number' },
   { key: 'privateId', label: 'Private ID' },
+  { key: 'role',      label: 'Role' },
   { key: 'status',    label: 'Status' },
 ];
 
-const SORTABLE: ColKey[] = ['id', 'name', 'email', 'phone', 'privateId', 'status'];
+const SORTABLE: ColKey[] = ['id', 'name', 'email', 'phone', 'privateId', 'role', 'status'];
 
 function getVal(emp: Employee, col: SortableCol): string {
   switch (col) {
@@ -32,6 +33,7 @@ function getVal(emp: Employee, col: SortableCol): string {
     case 'email':     return emp.email;
     case 'phone':     return emp.phone ?? '';
     case 'privateId': return emp.privateId ?? '';
+    case 'role':      return emp.role ?? '';
     case 'status':    return emp.status;
   }
 }
@@ -251,6 +253,8 @@ export default function EmployeeList({ employees, departments, onUpdate }: Emplo
         return <td key={key} style={{ padding: '12px 16px', fontSize: '14px', color: '#64748b' }}>{emp.phone || '—'}</td>;
       case 'privateId':
         return <td key={key} style={{ padding: '12px 16px', fontSize: '14px', color: '#64748b' }}>{emp.privateId || '—'}</td>;
+      case 'role':
+        return <td key={key} style={{ padding: '12px 16px', fontSize: '14px', color: '#64748b' }}>{emp.role || '—'}</td>;
       case 'status':
         return <td key={key} style={{ padding: '12px 16px' }}>{statusBadge(emp.status)}</td>;
     }
@@ -298,9 +302,9 @@ export default function EmployeeList({ employees, departments, onUpdate }: Emplo
         )}
         <input ref={csvInput} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCSV} />
         <button onClick={() => {
-          const headers = ['ID', 'Name', 'Email', 'Phone', 'Private ID', 'Status'];
+          const headers = ['ID', 'Name', 'Email', 'Phone', 'Private ID', 'Role', 'Status'];
           const rows = employees.map(e => [
-            e.soldierId ?? '', e.name, e.email, e.phone ?? '', e.privateId ?? '', e.status
+            e.soldierId ?? '', e.name, e.email, e.phone ?? '', e.privateId ?? '', e.role ?? '', e.status
           ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
           const csv = [headers.join(','), ...rows].join('\n');
           const a = document.createElement('a');

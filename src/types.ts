@@ -9,6 +9,7 @@ export interface Employee {
   status: 'Active' | 'Inactive';
   phone?: string;
   privateId?: string;
+  role?: string;
 }
 
 export interface Department {
