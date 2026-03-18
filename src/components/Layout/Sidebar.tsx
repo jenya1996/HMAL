@@ -1,4 +1,4 @@
-type Page = 'dashboard' | 'employees' | 'departments' | 'leaves';
+type Page = 'dashboard' | 'employees' | 'schedule';
 
 interface SidebarProps {
   currentPage: Page;
@@ -7,9 +7,8 @@ interface SidebarProps {
 
 const navItems: { page: Page; label: string; icon: string }[] = [
   { page: 'dashboard', label: 'Dashboard', icon: '🏠' },
-  { page: 'employees', label: 'Employees', icon: '👥' },
-  { page: 'departments', label: 'Departments', icon: '🏢' },
-  { page: 'leaves', label: 'Leave Requests', icon: '📅' },
+  { page: 'employees', label: 'Soldiers', icon: '🪖' },
+  { page: 'schedule', label: 'Schedule', icon: '📆' },
 ];
 
 export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {

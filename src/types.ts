@@ -1,5 +1,6 @@
 export interface Employee {
   id: string;
+  soldierId?: string;
   name: string;
   email: string;
   department: string;
@@ -7,6 +8,7 @@ export interface Employee {
   startDate: string;
   status: 'Active' | 'Inactive';
   phone?: string;
+  privateId?: string;
 }
 
 export interface Department {
