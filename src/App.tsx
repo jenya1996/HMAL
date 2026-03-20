@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Employee } from './types';
+import { Employee, ColumnDef, DEFAULT_COLUMNS } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import Sidebar from './components/Layout/Sidebar';
 import Header from './components/Layout/Header';
 import Dashboard from './components/Dashboard/Dashboard';
 import EmployeeList from './components/Employees/EmployeeList';
 import ScheduleCalendar, { ScheduleData } from './components/Schedule/ScheduleCalendar';
+import Tasks from './components/Tasks/Tasks';
+import Settings from './components/Settings/Settings';
 
 const SAMPLE_EMPLOYEES: Employee[] = [
   { id: 'e1',  name: 'Mark Goloshapov',  email: '', department: '', position: '', startDate: '', status: 'Active' },
@@ -23,17 +25,20 @@ const SAMPLE_EMPLOYEES: Employee[] = [
   { id: 'e13', name: 'Denis Yatzmaniov', email: '', department: '', position: '', startDate: '', status: 'Active' },
 ];
 
-type Page = 'dashboard' | 'employees' | 'schedule';
+type Page = 'dashboard' | 'employees' | 'schedule' | 'tasks' | 'settings';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [employees, setEmployees] = useLocalStorage<Employee[]>('hmal-soldiers-v2', SAMPLE_EMPLOYEES);
   const [schedule, setSchedule] = useLocalStorage<ScheduleData>('hmal-schedule', {});
+  const [columnDefs, setColumnDefs] = useLocalStorage<ColumnDef[]>('hmal-columns-v1', DEFAULT_COLUMNS);
 
   const pageTitles: Record<Page, string> = {
     dashboard: 'Dashboard',
     employees: 'Soldiers',
-    schedule: 'Schedule',
+    schedule:  'Schedule',
+    tasks:     'Tasks',
+    settings:  'Settings',
   };
 
   return (
@@ -43,12 +48,13 @@ export default function App() {
         <Header title={pageTitles[currentPage]} />
         <main style={{ flex: 1, overflow: 'hidden', padding: '24px', display: 'flex', flexDirection: 'column' }}>
           {currentPage === 'dashboard' && (
-            <Dashboard employees={employees} departments={[]} leaves={[]} />
+            <Dashboard employees={employees} />
           )}
           {currentPage === 'employees' && (
             <EmployeeList
               employees={employees}
               departments={[]}
+              columnDefs={columnDefs}
               onUpdate={setEmployees}
             />
           )}
@@ -58,6 +64,10 @@ export default function App() {
               schedule={schedule}
               onUpdate={setSchedule}
             />
+          )}
+          {currentPage === 'tasks'    && <Tasks />}
+          {currentPage === 'settings' && (
+            <Settings columnDefs={columnDefs} onUpdateColumns={setColumnDefs} />
           )}
         </main>
       </div>

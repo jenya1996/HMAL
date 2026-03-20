@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { Employee } from '../../types';
 
 interface ScheduleCalendarProps {
@@ -12,11 +13,11 @@ export type CellStatus = 'on-base' | 'home-leave' | 'departed' | 'returning' | '
 type ViewMode = 'day' | 'week' | 'month' | 'custom';
 
 const STATUS_CONFIG: Record<CellStatus, { label: string; fullLabel: string; bg: string; color: string }> = {
-  'on-base':    { label: 'B',   fullLabel: 'On Base',    bg: '#dcfce7', color: '#15803d' },
-  'home-leave': { label: 'H',   fullLabel: 'At Home', bg: '#dbeafe', color: '#1d4ed8' },
+  'on-base':    { label: 'B',   fullLabel: 'On Base',    bg: '#4ade80', color: '#14532d' },
+  'home-leave': { label: 'H',   fullLabel: 'At Home',    bg: '#60a5fa', color: '#1e3a8a' },
   'departed':   { label: 'OUT', fullLabel: 'Departed',   bg: '#ffedd5', color: '#c2410c' },
   'returning':  { label: 'RTN', fullLabel: 'Returning',  bg: '#fef9c3', color: '#a16207' },
-  'absent':     { label: 'ABS', fullLabel: 'Absent',     bg: '#fee2e2', color: '#dc2626' },
+  'absent':     { label: 'ABS', fullLabel: 'Absent',     bg: '#4b5563', color: '#f9fafb' },
   '':           { label: '',    fullLabel: '',            bg: 'transparent', color: '' },
 };
 
@@ -34,6 +35,54 @@ const MONTH_NAMES  = ['January','February','March','April','May','June','July','
 
 function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function shiftDay(dk: string, n: number): string {
+  const d = new Date(dk + 'T12:00:00'); // noon to avoid DST issues
+  d.setDate(d.getDate() + n);
+  return dateKey(d);
+}
+
+function withTransitions(sched: ScheduleData): ScheduleData {
+  const result: ScheduleData = {};
+
+  for (const empId of Object.keys(sched)) {
+    const empData = sched[empId];
+
+    // Find all H/ABS dates sorted
+    const leaveDays = Object.keys(empData)
+      .filter(dk => empData[dk] === 'home-leave' || empData[dk] === 'absent')
+      .sort();
+
+    // Start from existing data (preserves manually-set OUT/RTN)
+    const updated: Record<string, CellStatus> = { ...empData };
+
+    if (leaveDays.length > 0) {
+      const blocks: string[][] = [[leaveDays[0]]];
+      for (let i = 1; i < leaveDays.length; i++) {
+        if (shiftDay(leaveDays[i - 1], 1) === leaveDays[i]) {
+          blocks[blocks.length - 1].push(leaveDays[i]);
+        } else {
+          blocks.push([leaveDays[i]]);
+        }
+      }
+
+      for (const block of blocks) {
+        const outKey = shiftDay(block[0], -1);
+        const rtnKey = shiftDay(block[block.length - 1], 1);
+        if (empData[outKey] !== 'home-leave' && empData[outKey] !== 'absent') {
+          updated[outKey] = 'departed';
+        }
+        if (empData[rtnKey] !== 'home-leave' && empData[rtnKey] !== 'absent') {
+          updated[rtnKey] = 'returning';
+        }
+      }
+    }
+
+    result[empId] = updated;
+  }
+
+  return result;
 }
 
 function buildViewDates(mode: ViewMode, anchor: Date, applied: { from: string; to: string } | null): Date[] {
@@ -71,11 +120,11 @@ function bottomOf(i: number) { return (NUM_STATUSES - 1 - i) * SUM_ROW_H; }
 export default function ScheduleCalendar({ employees, schedule, onUpdate }: ScheduleCalendarProps) {
   const today = new Date(); today.setHours(0,0,0,0);
 
-  const [viewMode, setViewMode]         = useState<ViewMode>('month');
+  const [viewMode, setViewMode]         = useLocalStorage<ViewMode>('schedule-view-mode', 'week');
   const [anchor, setAnchor]             = useState<Date>(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
-  const [customFrom, setCustomFrom]     = useState('');
-  const [customTo, setCustomTo]         = useState('');
-  const [customApplied, setCustomApplied] = useState<{ from: string; to: string } | null>(null);
+  const [customFrom, setCustomFrom]     = useLocalStorage('schedule-custom-from', '');
+  const [customTo, setCustomTo]         = useLocalStorage('schedule-custom-to', '');
+  const [customApplied, setCustomApplied] = useLocalStorage<{ from: string; to: string } | null>('schedule-custom-applied', null);
   const [legend, setLegend]             = useState(true);
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const isDragging  = useRef(false);
@@ -87,8 +136,17 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
     return () => window.removeEventListener('mouseup', stop);
   }, []);
 
+  // Backfill transitions on any existing schedule data (e.g. loaded from localStorage)
+  useEffect(() => {
+    if (Object.keys(schedule).length === 0) return;
+    const next = withTransitions(schedule);
+    if (JSON.stringify(next) !== JSON.stringify(schedule)) onUpdate(next);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
   const viewDates      = buildViewDates(viewMode, anchor, customApplied);
-  const activeEmployees = employees.filter(e => e.status === 'Active');
+  const activeEmployees = employees.filter(e => e.status === 'Active' || e.status === 'Annexation');
 
   function cellId(empId: string, d: Date) { return `${empId}|${dateKey(d)}`; }
 
@@ -125,7 +183,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
       const [empId, key] = id.split('|');
       updated = { ...updated, [empId]: { ...(updated[empId] ?? {}), [key]: status } };
     });
-    onUpdate(updated);
+    onUpdate(withTransitions(updated));
     setSelectedCells(new Set());
   }
 
@@ -156,7 +214,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
     const current = schedule[empId]?.[key] ?? '';
     const idx = CYCLE.indexOf(current as CellStatus);
     const next = CYCLE[(idx + 1) % CYCLE.length];
-    onUpdate({ ...schedule, [empId]: { ...(schedule[empId] ?? {}), [key]: next } });
+    onUpdate(withTransitions({ ...schedule, [empId]: { ...(schedule[empId] ?? {}), [key]: next } }));
   }
 
   const isToday   = (d: Date) => dateKey(d) === dateKey(today);
@@ -413,8 +471,10 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
                       const count = viewDates.filter(d => getStatus(emp.id, d) === statusKey).length;
                       const sumBg = rowIdx % 2 === 0 ? '#f8fafc' : '#f1f5f9';
                       return (
-                        <td key={`sr-${statusKey}`} style={{ position: 'sticky', right: rightOf(i), width: SUM_COL_W, minWidth: SUM_COL_W, padding: '6px 2px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: count > 0 ? cfg.color : '#d1d5db', background: sumBg, borderLeft: i === 0 ? '2px solid #cbd5e1' : undefined, borderRight: '1px solid #e2e8f0' }}>
-                          {count > 0 ? count : '·'}
+                        <td key={`sr-${statusKey}`} style={{ position: 'sticky', right: rightOf(i), width: SUM_COL_W, minWidth: SUM_COL_W, padding: '6px 2px', textAlign: 'center', fontSize: '12px', fontWeight: '700', background: sumBg, borderLeft: i === 0 ? '2px solid #cbd5e1' : undefined, borderRight: '1px solid #e2e8f0' }}>
+                          {count > 0
+                            ? <span style={{ display: 'inline-block', background: cfg.bg, color: cfg.color, borderRadius: '4px', padding: '1px 5px', fontWeight: '700', fontSize: '11px' }}>{count}</span>
+                            : <span style={{ color: '#d1d5db' }}>·</span>}
                         </td>
                       );
                     })}
@@ -445,8 +505,10 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
                       const count    = activeEmployees.filter(emp => getStatus(emp.id, d) === statusKey).length;
                       const todayCol = isToday(d);
                       return (
-                        <td key={dateKey(d)} style={{ ...tdBase, zIndex: 1, padding: '0 2px', textAlign: 'center', color: count > 0 ? cfg.color : '#d1d5db', background: todayCol ? '#f0f7ff' : '#f8fafc', borderRight: '1px solid #f1f5f9', borderTop: i === 0 ? '2px solid #e2e8f0' : undefined }}>
-                          {count > 0 ? count : '·'}
+                        <td key={dateKey(d)} style={{ ...tdBase, zIndex: 1, padding: '0 2px', textAlign: 'center', background: todayCol ? '#f0f7ff' : '#f8fafc', borderRight: '1px solid #f1f5f9', borderTop: i === 0 ? '2px solid #e2e8f0' : undefined }}>
+                          {count > 0
+                            ? <span style={{ display: 'inline-block', background: cfg.bg, color: cfg.color, borderRadius: '4px', padding: '1px 5px', fontWeight: '700', fontSize: '11px' }}>{count}</span>
+                            : <span style={{ color: '#d1d5db' }}>·</span>}
                         </td>
                       );
                     })}
