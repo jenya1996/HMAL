@@ -90,7 +90,7 @@ function buildViewDates(mode: ViewMode, anchor: Date, applied: { from: string; t
   if (mode === 'week') {
     const start = new Date(anchor);
     const dow = start.getDay();
-    start.setDate(start.getDate() + (dow === 0 ? -6 : 1 - dow)); // Monday
+    start.setDate(start.getDate() - dow); // Sunday
     return Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
   }
   if (mode === 'month') {
@@ -217,8 +217,10 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
     onUpdate(withTransitions({ ...schedule, [empId]: { ...(schedule[empId] ?? {}), [key]: next } }));
   }
 
-  const isToday   = (d: Date) => dateKey(d) === dateKey(today);
-  const isWeekend = (d: Date) => { const w = d.getDay(); return w === 0 || w === 6; };
+  const isToday    = (d: Date) => dateKey(d) === dateKey(today);
+  const isWeekend  = (d: Date) => { const w = d.getDay(); return w === 5 || w === 6; };
+  const isFriday   = (d: Date) => d.getDay() === 5;
+  const isSaturday = (d: Date) => d.getDay() === 6;
 
   function titleText(): string {
     if (viewMode === 'day') return `${FULL_DAYS[anchor.getDay()]}, ${MONTH_NAMES[anchor.getMonth()]} ${anchor.getDate()}, ${anchor.getFullYear()}`;
@@ -386,13 +388,14 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
                     <th key={dateKey(d)} style={{
                       ...stickyTop,
                       padding: 0, fontSize: '11px', fontWeight: '600', textAlign: 'center',
-                      borderRight: '1px solid #e2e8f0', minWidth: colMinWidth,
-                      background: todayCol ? '#eff6ff' : weekend ? '#fafafa' : '#f8fafc',
-                      borderTop: todayCol ? '2px solid #2563eb' : undefined,
+                      borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #e2e8f0', minWidth: colMinWidth,
+                      borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined,
+                      background: todayCol ? '#eff6ff' : weekend ? '#fdf4ff' : '#f8fafc',
+                      borderTop: todayCol ? '2px solid #2563eb' : weekend ? '2px solid #e9d5ff' : undefined,
                     }}>
                       <div style={{ padding: '6px 4px' }}>
-                        <div style={{ color: weekend ? '#94a3b8' : todayCol ? '#2563eb' : '#374151', fontWeight: todayCol ? '700' : '600' }}>{top}</div>
-                        <div style={{ color: weekend ? '#cbd5e1' : '#94a3b8', fontSize: '10px', fontWeight: '400' }}>{bottom}</div>
+                        <div style={{ color: weekend ? '#7c3aed' : todayCol ? '#2563eb' : '#374151', fontWeight: todayCol || weekend ? '700' : '600' }}>{top}</div>
+                        <div style={{ color: weekend ? '#a78bfa' : '#94a3b8', fontSize: '10px', fontWeight: '400' }}>{bottom}</div>
                       </div>
                     </th>
                   );
@@ -447,8 +450,11 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
                           onMouseEnter={() => handleCellMouseEnter(emp.id, d)}
                           title={status ? cfg.fullLabel : 'Click or drag to select'}
                           style={{
-                            padding: '4px', textAlign: 'center', borderRight: '1px solid #f1f5f9', minWidth: colMinWidth,
-                            background: isSelected ? '#dbeafe' : todayCol ? '#f0f7ff' : weekend ? '#fafafa' : undefined,
+                            padding: '4px', textAlign: 'center',
+                            borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #f1f5f9',
+                            borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined,
+                            minWidth: colMinWidth,
+                            background: isSelected ? '#dbeafe' : todayCol ? '#f0f7ff' : weekend ? '#faf5ff' : undefined,
                             cursor: 'pointer',
                             outline: isSelected ? '2px solid #2563eb' : undefined,
                             outlineOffset: '-2px',
@@ -505,7 +511,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
                       const count    = activeEmployees.filter(emp => getStatus(emp.id, d) === statusKey).length;
                       const todayCol = isToday(d);
                       return (
-                        <td key={dateKey(d)} style={{ ...tdBase, zIndex: 1, padding: '0 2px', textAlign: 'center', background: todayCol ? '#f0f7ff' : '#f8fafc', borderRight: '1px solid #f1f5f9', borderTop: i === 0 ? '2px solid #e2e8f0' : undefined }}>
+                        <td key={dateKey(d)} style={{ ...tdBase, zIndex: 1, padding: '0 2px', textAlign: 'center', background: todayCol ? '#f0f7ff' : isWeekend(d) ? '#faf5ff' : '#f8fafc', borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #f1f5f9', borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined, borderTop: i === 0 ? '2px solid #e2e8f0' : undefined }}>
                           {count > 0
                             ? <span style={{ display: 'inline-block', background: cfg.bg, color: cfg.color, borderRadius: '4px', padding: '1px 5px', fontWeight: '700', fontSize: '11px' }}>{count}</span>
                             : <span style={{ color: '#d1d5db' }}>·</span>}

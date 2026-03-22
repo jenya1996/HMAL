@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Employee, ColumnDef, DEFAULT_COLUMNS } from './types';
+import { Employee, ColumnDef, DEFAULT_COLUMNS, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import Sidebar from './components/Layout/Sidebar';
 import Header from './components/Layout/Header';
@@ -32,6 +32,10 @@ export default function App() {
   const [employees, setEmployees] = useLocalStorage<Employee[]>('hmal-soldiers-v2', SAMPLE_EMPLOYEES);
   const [schedule, setSchedule] = useLocalStorage<ScheduleData>('hmal-schedule', {});
   const [columnDefs, setColumnDefs] = useLocalStorage<ColumnDef[]>('hmal-columns-v1', DEFAULT_COLUMNS);
+  const [taskTemplates, setTaskTemplates] = useLocalStorage<TaskTemplate[]>('hmal-task-templates', []);
+  const [taskAssignments, setTaskAssignments] = useLocalStorage<TaskAssignments>('hmal-task-assignments', {});
+  const [taskRoles, setTaskRoles]             = useLocalStorage<TaskRoles>('hmal-task-roles', {});
+  const [taskGroups, setTaskGroups]           = useLocalStorage<TaskGroup[]>('hmal-task-groups', []);
 
   const pageTitles: Record<Page, string> = {
     dashboard: 'Dashboard',
@@ -65,9 +69,27 @@ export default function App() {
               onUpdate={setSchedule}
             />
           )}
-          {currentPage === 'tasks'    && <Tasks />}
+          {currentPage === 'tasks' && (
+            <Tasks
+              employees={employees}
+              schedule={schedule}
+              taskTemplates={taskTemplates}
+              taskAssignments={taskAssignments}
+              taskRoles={taskRoles}
+              taskGroups={taskGroups}
+              onUpdateAssignments={setTaskAssignments}
+              onUpdateRoles={setTaskRoles}
+            />
+          )}
           {currentPage === 'settings' && (
-            <Settings columnDefs={columnDefs} onUpdateColumns={setColumnDefs} />
+            <Settings
+              columnDefs={columnDefs}
+              onUpdateColumns={setColumnDefs}
+              taskTemplates={taskTemplates}
+              onUpdateTaskTemplates={setTaskTemplates}
+              taskGroups={taskGroups}
+              onUpdateTaskGroups={setTaskGroups}
+            />
           )}
         </main>
       </div>
