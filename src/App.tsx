@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from './lib/firebase';
+import LoginPage from './components/Auth/LoginPage';
 import { Employee, ColumnDef, DEFAULT_COLUMNS, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup } from './types';
-import { useLocalStorage } from './hooks/useLocalStorage';
+import { useFirestore } from './hooks/useFirestore';
 import Sidebar from './components/Layout/Sidebar';
 import Header from './components/Layout/Header';
 import Dashboard from './components/Dashboard/Dashboard';
@@ -27,15 +30,15 @@ const SAMPLE_EMPLOYEES: Employee[] = [
 
 type Page = 'dashboard' | 'employees' | 'schedule' | 'tasks' | 'settings';
 
-export default function App() {
+function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
-  const [employees, setEmployees] = useLocalStorage<Employee[]>('hmal-soldiers-v2', SAMPLE_EMPLOYEES);
-  const [schedule, setSchedule] = useLocalStorage<ScheduleData>('hmal-schedule', {});
-  const [columnDefs, setColumnDefs] = useLocalStorage<ColumnDef[]>('hmal-columns-v1', DEFAULT_COLUMNS);
-  const [taskTemplates, setTaskTemplates] = useLocalStorage<TaskTemplate[]>('hmal-task-templates', []);
-  const [taskAssignments, setTaskAssignments] = useLocalStorage<TaskAssignments>('hmal-task-assignments', {});
-  const [taskRoles, setTaskRoles]             = useLocalStorage<TaskRoles>('hmal-task-roles', {});
-  const [taskGroups, setTaskGroups]           = useLocalStorage<TaskGroup[]>('hmal-task-groups', []);
+  const [employees, setEmployees]         = useFirestore<Employee[]>('hmal-soldiers-v2', SAMPLE_EMPLOYEES);
+  const [schedule, setSchedule]           = useFirestore<ScheduleData>('hmal-schedule', {});
+  const [columnDefs, setColumnDefs]       = useFirestore<ColumnDef[]>('hmal-columns-v1', DEFAULT_COLUMNS);
+  const [taskTemplates, setTaskTemplates] = useFirestore<TaskTemplate[]>('hmal-task-templates', []);
+  const [taskAssignments, setTaskAssignments] = useFirestore<TaskAssignments>('hmal-task-assignments', {});
+  const [taskRoles, setTaskRoles]         = useFirestore<TaskRoles>('hmal-task-roles', {});
+  const [taskGroups, setTaskGroups]       = useFirestore<TaskGroup[]>('hmal-task-groups', []);
 
   const pageTitles: Record<Page, string> = {
     dashboard: 'Dashboard',
@@ -95,4 +98,23 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+export default function App() {
+  const [user, setUser] = useState<User | null | 'loading'>('loading');
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, (u) => setUser(u));
+  }, []);
+
+  if (user === 'loading') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0f172a' }}>
+        <div style={{ color: '#94a3b8', fontSize: '14px' }}>Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginPage />;
+  return <AppContent />;
 }

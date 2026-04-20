@@ -11,6 +11,7 @@ export interface Employee {
   privateId?: string;
   role?: string;
   customFields?: Record<string, string>;
+  canLogin?: boolean;
 }
 
 export interface Department {
@@ -58,6 +59,7 @@ export interface TaskGroup {
   id: string;
   name: string;
   intervalHours: number; // min rest between tasks in same group
+  alertHours: number;    // daily work hours threshold before soldier is flagged red
 }
 
 // [templateId][dateKey] = assignedSoldierIds[]

@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { ColumnDef, FieldType, TaskTemplate, TaskGroup } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useFirestore } from '../../hooks/useFirestore';
 
 const PRESET_COLORS = [
   '#2563eb', '#16a34a', '#dc2626', '#ea580c',
@@ -37,11 +37,12 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   const [tplCerts, setTplCerts]         = useState<string[]>([]);
   const [tplGroupId, setTplGroupId]     = useState<string>('');
   const [editingTpl, setEditingTpl]     = useState<string | null>(null);
-  const [certSourceKey, setCertSourceKey] = useLocalStorage<string>('hmal-cert-source-col', '');
+  const [certSourceKey, setCertSourceKey] = useFirestore<string>('hmal-cert-source-col', '');
 
   // Group management state
   const [newGroupName, setNewGroupName]         = useState('');
   const [newGroupInterval, setNewGroupInterval] = useState(8);
+  const [newGroupAlert, setNewGroupAlert]       = useState(16);
 
   function resetTplForm() {
     setTplName(''); setTplStart('08:00'); setTplEnd('16:00');
@@ -51,9 +52,10 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   function addGroup() {
     const name = newGroupName.trim();
     if (!name) return;
-    onUpdateTaskGroups([...taskGroups, { id: `grp_${Date.now()}`, name, intervalHours: newGroupInterval }]);
+    onUpdateTaskGroups([...taskGroups, { id: `grp_${Date.now()}`, name, intervalHours: newGroupInterval, alertHours: newGroupAlert }]);
     setNewGroupName('');
     setNewGroupInterval(8);
+    setNewGroupAlert(16);
   }
 
   function deleteGroup(id: string) {
@@ -380,7 +382,8 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
             {taskGroups.map(g => (
               <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '8px', background: '#f1f5f9', border: '1px solid #e2e8f0' }}>
                 <span style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>{g.name}</span>
-                <span style={{ fontSize: '11px', color: '#64748b', background: '#e2e8f0', borderRadius: '4px', padding: '1px 6px' }}>{g.intervalHours}h interval</span>
+                <span style={{ fontSize: '11px', color: '#64748b', background: '#e2e8f0', borderRadius: '4px', padding: '1px 6px' }}>{g.intervalHours}h rest</span>
+                <span style={{ fontSize: '11px', color: '#dc2626', background: '#fef2f2', borderRadius: '4px', padding: '1px 6px' }}>⚠ {g.alertHours ?? 16}h alert</span>
                 <button onClick={() => deleteGroup(g.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '14px', lineHeight: 1, padding: '0 2px' }}>×</button>
               </div>
             ))}
@@ -399,6 +402,13 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
               <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '500', whiteSpace: 'nowrap' }}>Rest interval</span>
               <input type="number" min={1} max={72} value={newGroupInterval}
                 onChange={e => setNewGroupInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                style={{ ...inputStyle, width: '54px', textAlign: 'center' }} />
+              <span style={{ fontSize: '12px', color: '#64748b' }}>h</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ fontSize: '12px', color: '#dc2626', fontWeight: '500', whiteSpace: 'nowrap' }}>⚠ Alert after</span>
+              <input type="number" min={1} max={24} value={newGroupAlert}
+                onChange={e => setNewGroupAlert(Math.max(1, parseInt(e.target.value) || 1))}
                 style={{ ...inputStyle, width: '54px', textAlign: 'center' }} />
               <span style={{ fontSize: '12px', color: '#64748b' }}>h</span>
             </div>
@@ -541,7 +551,8 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
       </div>
       )}
 
-      </div>
+
+</div>
     </div>
   );
 }

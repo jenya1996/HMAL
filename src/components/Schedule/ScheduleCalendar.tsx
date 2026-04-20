@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useFirestore } from '../../hooks/useFirestore';
 import { Employee } from '../../types';
 
 interface ScheduleCalendarProps {
@@ -120,11 +120,11 @@ function bottomOf(i: number) { return (NUM_STATUSES - 1 - i) * SUM_ROW_H; }
 export default function ScheduleCalendar({ employees, schedule, onUpdate }: ScheduleCalendarProps) {
   const today = new Date(); today.setHours(0,0,0,0);
 
-  const [viewMode, setViewMode]         = useLocalStorage<ViewMode>('schedule-view-mode', 'week');
+  const [viewMode, setViewMode]         = useFirestore<ViewMode>('schedule-view-mode', 'week');
   const [anchor, setAnchor]             = useState<Date>(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
-  const [customFrom, setCustomFrom]     = useLocalStorage('schedule-custom-from', '');
-  const [customTo, setCustomTo]         = useLocalStorage('schedule-custom-to', '');
-  const [customApplied, setCustomApplied] = useLocalStorage<{ from: string; to: string } | null>('schedule-custom-applied', null);
+  const [customFrom, setCustomFrom]     = useFirestore('schedule-custom-from', '');
+  const [customTo, setCustomTo]         = useFirestore('schedule-custom-to', '');
+  const [customApplied, setCustomApplied] = useFirestore<{ from: string; to: string } | null>('schedule-custom-applied', null);
   const [legend, setLegend]             = useState(true);
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const isDragging  = useRef(false);

@@ -1,3 +1,6 @@
+import { signOut } from 'firebase/auth';
+import { auth } from '../../lib/firebase';
+
 interface HeaderProps {
   title: string;
 }
@@ -16,7 +19,19 @@ export default function Header({ title }: HeaderProps) {
       justifyContent: 'space-between',
     }}>
       <h1 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b' }}>{title}</h1>
-      <div style={{ fontSize: '13px', color: '#64748b' }}>{dateStr}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ fontSize: '13px', color: '#64748b' }}>{dateStr}</div>
+        <button
+          onClick={() => signOut(auth)}
+          style={{
+            padding: '6px 14px', borderRadius: '8px', border: '1px solid #e2e8f0',
+            background: 'white', color: '#64748b', fontSize: '13px',
+            fontWeight: '500', cursor: 'pointer',
+          }}
+        >
+          Sign Out
+        </button>
+      </div>
     </header>
   );
 }

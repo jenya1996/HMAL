@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Employee, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup } from '../../types';
 import { ScheduleData, CellStatus } from '../Schedule/ScheduleCalendar';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useFirestore } from '../../hooks/useFirestore';
 
 type ViewMode = 'day' | 'week' | 'month' | 'custom';
 
@@ -36,6 +36,16 @@ function dateKey(d: Date): string {
 function timeToMins(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
+}
+
+function taskDurationH(tpl: TaskTemplate): number {
+  let mins = timeToMins(tpl.endTime) - timeToMins(tpl.startTime);
+  if (mins <= 0) mins += 24 * 60;
+  return mins / 60;
+}
+
+function fmtH(h: number): string {
+  return Number.isInteger(h) ? `${h}h` : `${h.toFixed(1)}h`;
 }
 
 function dayNumber(dk: string): number {
@@ -170,40 +180,68 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
   const requiredCerts = tpl.certifications ?? [];
   const full          = assigned.length >= tpl.requiredSoldiers;
 
+  // Returns overwork label (e.g. "8h+8h") if assigning this soldier would exceed the group alert threshold.
+  function getOverworkWarning(empId: string): string {
+    if (!group || !tpl.groupId) return '';
+    const otherGroupTpls = allTaskTemplates.filter(t => t.groupId === tpl.groupId && t.id !== tpl.id);
+    const alreadyIn = otherGroupTpls.filter(t => (allTaskAssignments[t.id]?.[dk] ?? []).includes(empId));
+    if (alreadyIn.length === 0) return '';
+    const hours = [...alreadyIn, tpl].map(t => taskDurationH(t));
+    const total  = hours.reduce((s, h) => s + h, 0);
+    if (total < (group.alertHours ?? 16)) return '';
+    return hours.map(fmtH).join('+');
+  }
+
   const assignedSoldiers = sidebarSoldiers.filter(({ emp }) => assigned.includes(emp.id));
   const unassigned       = sidebarSoldiers.filter(({ emp }) => !assigned.includes(emp.id));
 
+  function sortPriority({ emp }: { emp: Employee; status: CellStatus }): number {
+    if (getBlockedUntil(emp.id) !== null) return 2;      // rest → bottom
+    if (getOverworkWarning(emp.id) !== '') return 1;     // 8-8 → middle
+    return 0;                                            // free → top
+  }
+
+  function sortedSoldiers(list: Array<{ emp: Employee; status: CellStatus }>) {
+    return [...list].sort((a, b) => sortPriority(a) - sortPriority(b));
+  }
+
   const certSections = requiredCerts.map(cert => ({
     label:    cert,
-    soldiers: unassigned.filter(({ emp }) => soldierCerts(emp, certSourceKey).includes(cert)),
+    soldiers: sortedSoldiers(unassigned.filter(({ emp }) => soldierCerts(emp, certSourceKey).includes(cert))),
   }));
 
-  const otherSoldiers = unassigned.filter(({ emp }) => {
+  const otherSoldiers = sortedSoldiers(unassigned.filter(({ emp }) => {
     const certs = soldierCerts(emp, certSourceKey);
     return !requiredCerts.some(rc => certs.includes(rc));
-  });
+  }));
 
   function renderSoldierRow({ emp, status }: { emp: Employee; status: CellStatus }, isAssignedRow: boolean, cert?: string) {
-    const st          = STATUS_STYLE[status as CellStatus];
+    const st           = STATUS_STYLE[status as CellStatus];
     const blockedUntil = isAssignedRow ? null : getBlockedUntil(emp.id);
     const isBlocked    = blockedUntil !== null;
+    const owLabel      = isAssignedRow || isBlocked ? '' : getOverworkWarning(emp.id);
+    const isOverwork   = owLabel !== '';
+    const bgColor      = isBlocked ? '#f8fafc' : isOverwork ? '#fef2f2' : isAssignedRow ? tpl.color + '18' : '#f8fafc';
+    const borderColor  = isBlocked ? '#f1f5f9' : isOverwork ? '#fca5a5' : isAssignedRow ? tpl.color + '88' : '#e2e8f0';
+    const nameColor    = isBlocked ? '#94a3b8' : isOverwork ? '#dc2626' : st?.color ?? '#1e293b';
     return (
       <div key={emp.id}
         onClick={() => !isBlocked && onToggle(emp.id, cert)}
-        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 10px', borderRadius: '8px', cursor: isBlocked ? 'default' : 'pointer', background: isBlocked ? '#f8fafc' : isAssignedRow ? tpl.color + '18' : '#f8fafc', border: `1px solid ${isBlocked ? '#f1f5f9' : isAssignedRow ? tpl.color + '88' : '#e2e8f0'}`, opacity: isBlocked ? 0.55 : 1, transition: 'all 0.1s' }}>
-        <div style={{ width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0, border: `2px solid ${isBlocked ? '#e2e8f0' : isAssignedRow ? tpl.color : '#cbd5e1'}`, background: isAssignedRow ? tpl.color : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'white', fontWeight: '700' }}>
+        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 10px', borderRadius: '8px', cursor: isBlocked ? 'default' : 'pointer', background: bgColor, border: `1px solid ${borderColor}`, opacity: isBlocked ? 0.55 : 1, transition: 'all 0.1s' }}>
+        <div style={{ width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0, border: `2px solid ${isBlocked ? '#e2e8f0' : isOverwork ? '#fca5a5' : isAssignedRow ? tpl.color : '#cbd5e1'}`, background: isAssignedRow ? tpl.color : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'white', fontWeight: '700' }}>
           {isAssignedRow ? '✓' : ''}
         </div>
-        <span style={{ fontSize: '12px', fontWeight: '500', color: isBlocked ? '#94a3b8' : st?.color ?? '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '12px', fontWeight: isOverwork ? '700' : '500', color: nameColor, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {emp.name.split(' ').slice(0, 2).join(' ')}
         </span>
         {isBlocked && <span style={{ fontSize: '10px', fontWeight: '600', color: '#94a3b8', flexShrink: 0, whiteSpace: 'nowrap' }}>rest {blockedUntil}</span>}
+        {isOverwork && <span style={{ fontSize: '10px', fontWeight: '700', color: '#dc2626', flexShrink: 0, whiteSpace: 'nowrap' }}>⚠ {owLabel}</span>}
         {isAssignedRow && slotRoles[emp.id] && (
           <span style={{ fontSize: '10px', fontWeight: '700', padding: '1px 7px', borderRadius: '9999px', background: tpl.color + '22', color: tpl.color, border: `1px solid ${tpl.color}44`, flexShrink: 0 }}>
             {slotRoles[emp.id]}
           </span>
         )}
-        {!isBlocked && st && <span style={{ fontSize: '10px', fontWeight: '700', color: st.color, flexShrink: 0 }}>{st.label}</span>}
+        {!isBlocked && !isOverwork && st && <span style={{ fontSize: '10px', fontWeight: '700', color: st.color, flexShrink: 0 }}>{st.label}</span>}
       </div>
     );
   }
@@ -266,12 +304,12 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
 export default function Tasks({ employees, schedule, taskTemplates, taskAssignments, taskRoles, taskGroups, onUpdateAssignments, onUpdateRoles }: TasksProps) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
-  const [certSourceKey]                   = useLocalStorage<string>('hmal-cert-source-col', '');
-  const [viewMode, setViewMode]           = useLocalStorage<ViewMode>('tasks-view-mode', 'day');
+  const [certSourceKey]                   = useFirestore<string>('hmal-cert-source-col', '');
+  const [viewMode, setViewMode]           = useFirestore<ViewMode>('tasks-view-mode', 'day');
   const [anchor, setAnchor]               = useState<Date>(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
-  const [customFrom, setCustomFrom]       = useLocalStorage('tasks-custom-from', '');
-  const [customTo, setCustomTo]           = useLocalStorage('tasks-custom-to', '');
-  const [customApplied, setCustomApplied] = useLocalStorage<{ from: string; to: string } | null>('tasks-custom-applied', null);
+  const [customFrom, setCustomFrom]       = useFirestore('tasks-custom-from', '');
+  const [customTo, setCustomTo]           = useFirestore('tasks-custom-to', '');
+  const [customApplied, setCustomApplied] = useFirestore<{ from: string; to: string } | null>('tasks-custom-applied', null);
   const [selectedCell, setSelectedCell]   = useState<{ templateId: string; dk: string } | null>(null);
   const [extraDays, setExtraDays]         = useState(2);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -313,6 +351,22 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
 
   function getAssigned(templateId: string, dk: string): string[] {
     return taskAssignments[templateId]?.[dk] ?? [];
+  }
+
+  // Returns overwork info for a soldier on a day, per group.
+  // If the soldier's total hours in a group on that day >= group.alertHours, returns the breakdown.
+  function overworkInfo(empId: string, dk: string, groupId: string | undefined): { exceeded: boolean; label: string } {
+    if (!groupId) return { exceeded: false, label: '' };
+    const group = taskGroups.find(g => g.id === groupId);
+    if (!group) return { exceeded: false, label: '' };
+    const groupTpls = taskTemplates.filter(t => t.groupId === groupId);
+    const assignedTpls = groupTpls.filter(t => getAssigned(t.id, dk).includes(empId));
+    if (assignedTpls.length < 2) return { exceeded: false, label: '' };
+    const hours = assignedTpls.map(t => taskDurationH(t));
+    const total = hours.reduce((s, h) => s + h, 0);
+    const threshold = group.alertHours ?? 16;
+    if (total < threshold) return { exceeded: false, label: '' };
+    return { exceeded: true, label: hours.map(fmtH).join('+') };
   }
 
   function toggleAssignment(templateId: string, dk: string, empId: string, cert?: string) {
@@ -366,7 +420,7 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
   const sortedTemplates = [...taskTemplates].sort((a, b) => timeToMins(a.startTime) - timeToMins(b.startTime));
 
   // Custom row order for grid view (persisted)
-  const [taskOrder, setTaskOrder] = useLocalStorage<string[]>('hmal-task-order', []);
+  const [taskOrder, setTaskOrder] = useFirestore<string[]>('hmal-task-order', []);
   const [dragOverRow, setDragOverRow] = useState<number | null>(null);
   const dragRowIdx = useRef<number | null>(null);
 
@@ -633,7 +687,16 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
                                       </div>
                                     )}
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
-                                      {assigned.map(id => { const e = employees.find(x => x.id === id); return e ? <span key={id} style={{ fontSize: '11px', background: tpl.color + '33', color: tpl.color, borderRadius: '4px', padding: '1px 6px', fontWeight: '600' }}>{e.name.split(' ')[0]}</span> : null; })}
+                                      {assigned.map(id => {
+                                        const e = employees.find(x => x.id === id);
+                                        if (!e) return null;
+                                        const ow = overworkInfo(id, dayDk, tpl.groupId);
+                                        return (
+                                          <span key={id} style={{ fontSize: '11px', background: ow.exceeded ? '#fef2f2' : tpl.color + '33', color: ow.exceeded ? '#dc2626' : tpl.color, borderRadius: '4px', padding: '1px 6px', fontWeight: '600', border: ow.exceeded ? '1px solid #fca5a5' : undefined }}>
+                                            {e.name.split(' ')[0]}{ow.exceeded ? ` ⚠${ow.label}` : ''}
+                                          </span>
+                                        );
+                                      })}
                                       {assigned.length < tpl.requiredSoldiers && <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>click to assign</span>}
                                     </div>
                                   </div>
@@ -743,12 +806,16 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
                                       if (!emp) return null;
                                       const role = taskRoles[tpl.id]?.[cellDk]?.[id] ?? '';
                                       const st   = STATUS_STYLE[getSoldierStatus(emp.id, cellDk)];
+                                      const ow   = overworkInfo(id, cellDk, tpl.groupId);
                                       return (
-                                        <div key={id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 7px', borderRadius: '7px', background: tpl.color + '18', border: `1px solid ${tpl.color}44`, whiteSpace: 'nowrap' }}>
-                                          <span style={{ fontSize: '11px', fontWeight: '600', color: st?.color ?? '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        <div key={id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 7px', borderRadius: '7px', background: ow.exceeded ? '#fef2f2' : tpl.color + '18', border: `1px solid ${ow.exceeded ? '#fca5a5' : tpl.color + '44'}`, whiteSpace: 'nowrap' }}>
+                                          <span style={{ fontSize: '11px', fontWeight: '600', color: ow.exceeded ? '#dc2626' : (st?.color ?? '#1e293b'), flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                             {emp.name.split(' ')[0]}
                                           </span>
-                                          {role && (
+                                          {ow.exceeded && (
+                                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#dc2626', flexShrink: 0 }}>⚠{ow.label}</span>
+                                          )}
+                                          {role && !ow.exceeded && (
                                             <span style={{ fontSize: '10px', fontWeight: '700', padding: '1px 5px', borderRadius: '9999px', background: tpl.color + '33', color: tpl.color, border: `1px solid ${tpl.color}55`, flexShrink: 0 }}>
                                               {role}
                                             </span>
