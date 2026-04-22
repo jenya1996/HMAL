@@ -80,8 +80,8 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
       }}>
         {!collapsed && (
           <div>
-            <div style={{ fontSize: '20px', fontWeight: '700', whiteSpace: 'nowrap' }}>🏛️ HR Manager</div>
-            <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px', whiteSpace: 'nowrap' }}>Human Resources System</div>
+            <div style={{ fontSize: '20px', fontWeight: '700', whiteSpace: 'nowrap' }}>🏛️ HMAL</div>
+            <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px', whiteSpace: 'nowrap' }}></div>
           </div>
         )}
         <button

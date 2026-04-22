@@ -3,3 +3,8 @@ dist/
 .DS_Store
 *.local
 .env
+
+# Claude Code / AI system files
+.claude/
+CLAUDE.md
+SECURITY_QA_REPORT.md

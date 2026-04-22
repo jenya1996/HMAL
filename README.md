@@ -1,2 +1,2 @@
 # HMAL
-human resources  management webapp
+human resources management webapp
