@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Employee, Department, ColumnDef } from '../../types';
-import { createAuthUser } from '../../lib/firebase';
+import { apiFetch } from '../../lib/api';
 
 interface EmployeeFormProps {
   employee?: Employee;
@@ -41,7 +41,10 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
       if (password.length < 6) { setAuthError('Password must be at least 6 characters.'); return; }
       setSaving(true);
       try {
-        await createAuthUser(form.email, password);
+        await apiFetch('/api/auth/users', {
+          method: 'POST',
+          body:   JSON.stringify({ email: form.email, password }),
+        });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes('email-already-in-use')) {
