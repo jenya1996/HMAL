@@ -31,7 +31,7 @@ router.post('/login', async (req, res) => {
     const { idToken } = (await response.json()) as { idToken: string };
     const sessionCookie = await adminAuth.createSessionCookie(idToken, { expiresIn: SESSION_DURATION_MS });
 
-    res.cookie('session', sessionCookie, {
+    res.cookie('__session', sessionCookie, {
       maxAge:   SESSION_DURATION_MS,
       httpOnly: true,
       secure:   process.env.NODE_ENV === 'production',
@@ -46,7 +46,7 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('session', {
+  res.clearCookie('__session', {
     httpOnly: true,
     secure:   process.env.NODE_ENV === 'production',
     sameSite: 'lax',
