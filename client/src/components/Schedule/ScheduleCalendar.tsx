@@ -22,7 +22,6 @@ const STATUS_CONFIG: Record<CellStatus, { label: string; fullLabel: string; bg: 
 };
 
 const STATUSES = Object.keys(STATUS_CONFIG).filter(k => k !== '') as CellStatus[];
-const CYCLE: CellStatus[] = [...STATUSES, ''];
 
 const SUM_COL_W   = 42;
 const SUM_ROW_H   = 30;
@@ -172,10 +171,6 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
     });
   }
 
-  function toggleCell(empId: string, d: Date) {
-    handleCellMouseDown(empId, d);
-  }
-
   function applyStatus(status: CellStatus) {
     if (selectedCells.size === 0) return;
     let updated = { ...schedule };
@@ -209,13 +204,6 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
     return (val in STATUS_CONFIG) ? val as CellStatus : '';
   }
 
-  function cycleStatus(empId: string, d: Date) {
-    const key = dateKey(d);
-    const current = schedule[empId]?.[key] ?? '';
-    const idx = CYCLE.indexOf(current as CellStatus);
-    const next = CYCLE[(idx + 1) % CYCLE.length];
-    onUpdate(withTransitions({ ...schedule, [empId]: { ...(schedule[empId] ?? {}), [key]: next } }));
-  }
 
   const isToday    = (d: Date) => dateKey(d) === dateKey(today);
   const isWeekend  = (d: Date) => { const w = d.getDay(); return w === 5 || w === 6; };

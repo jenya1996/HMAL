@@ -11,8 +11,6 @@ interface EmployeeListProps {
 
 type SortDir = 'asc' | 'desc';
 
-const BUILTIN_SORTABLE = ['id', 'name', 'email', 'phone', 'privateId', 'role', 'status'];
-
 function getVal(emp: Employee, key: string): string {
   switch (key) {
     case 'id':        return emp.soldierId ?? '';

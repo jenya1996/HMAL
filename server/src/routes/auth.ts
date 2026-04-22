@@ -35,7 +35,7 @@ router.post('/login', async (req, res) => {
       maxAge:   SESSION_DURATION_MS,
       httpOnly: true,
       secure:   process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: 'lax',
     });
 
     res.json({ ok: true });
@@ -49,7 +49,7 @@ router.post('/logout', (req, res) => {
   res.clearCookie('session', {
     httpOnly: true,
     secure:   process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
   });
   res.json({ ok: true });
 });
