@@ -1,16 +1,17 @@
 import { apiFetch } from '../../lib/api';
 
 interface HeaderProps {
-  title: string;
+  title:      string;
+  onSignOut:  () => void;
 }
 
-export default function Header({ title }: HeaderProps) {
+export default function Header({ title, onSignOut }: HeaderProps) {
   const now     = new Date();
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-  async function handleSignOut() {
-    await apiFetch('/api/auth/logout', { method: 'POST' });
-    window.location.reload();
+  function handleSignOut() {
+    apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    onSignOut();
   }
 
   return (

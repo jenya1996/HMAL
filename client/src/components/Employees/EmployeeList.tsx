@@ -114,10 +114,15 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
     else { setSortCol(key); setSortDir('asc'); }
   }
   function handleSave(emp: Employee) {
-    onUpdate(editEmployee ? employees.map(e => e.id === emp.id ? emp : e) : [...employees, emp]);
+    const isEdit = !!editEmployee;
+    const next = isEdit ? employees.map(e => e.id === emp.id ? emp : e) : [...employees, emp];
+    console.log(`[EmployeeList] handleSave — ${isEdit ? 'editing' : 'adding'} soldier:`, emp);
+    console.log('[EmployeeList] new employees array length:', next.length);
+    onUpdate(next);
     setShowForm(false); setEditEmployee(undefined); setSelected(new Set());
   }
   function handleDelete(ids: string[]) {
+    console.log('[EmployeeList] handleDelete — deleting ids:', ids);
     onUpdate(employees.filter(e => !ids.includes(e.id)));
     setSelected(new Set()); setDeleteIds(null);
   }
@@ -129,6 +134,7 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
     const next = [...employees];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
+    console.log('[EmployeeList] onRowDrop — reordering soldiers');
     onUpdate(next); dragRow.current = null; setRowDragOver(null);
   }
 

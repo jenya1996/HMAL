@@ -34,19 +34,22 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setAuthError('');
+    console.log('[EmployeeForm] handleSubmit — form data:', form);
 
-    // If login is being granted for the first time, create the Firebase Auth user
     if (form.canLogin && !employee?.canLogin) {
       if (!form.email) { setAuthError('Email is required to allow login.'); return; }
       if (password.length < 6) { setAuthError('Password must be at least 6 characters.'); return; }
       setSaving(true);
       try {
+        console.log('[EmployeeForm] creating Firebase Auth user for:', form.email);
         await apiFetch('/api/auth/users', {
           method: 'POST',
           body:   JSON.stringify({ email: form.email, password }),
         });
+        console.log('[EmployeeForm] Firebase Auth user created successfully');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
+        console.error('[EmployeeForm] Firebase Auth user creation failed:', msg);
         if (msg.includes('email-already-in-use')) {
           setAuthError('This email already has a login account.');
         } else {
@@ -57,7 +60,9 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
       }
     }
 
-    onSave({ id: employee?.id ?? `e${Date.now()}`, ...form });
+    const emp = { id: employee?.id ?? `e${Date.now()}`, ...form };
+    console.log('[EmployeeForm] calling onSave with:', emp);
+    onSave(emp);
     setSaving(false);
   }
 

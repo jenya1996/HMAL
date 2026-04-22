@@ -29,7 +29,7 @@ const SAMPLE_EMPLOYEES: Employee[] = [
 
 type Page = 'dashboard' | 'employees' | 'schedule' | 'tasks' | 'settings';
 
-function AppContent() {
+function AppContent({ onSignOut }: { onSignOut: () => void }) {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [employees,        setEmployees]        = useFirestore<Employee[]>('hmal-soldiers-v2', SAMPLE_EMPLOYEES);
   const [schedule,         setSchedule]         = useFirestore<ScheduleData>('hmal-schedule', {});
@@ -51,7 +51,7 @@ function AppContent() {
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <Header title={pageTitles[currentPage]} />
+        <Header title={pageTitles[currentPage]} onSignOut={onSignOut} />
         <main style={{ flex: 1, overflow: 'hidden', padding: '24px', display: 'flex', flexDirection: 'column' }}>
           {currentPage === 'dashboard' && (
             <Dashboard employees={employees} />
@@ -117,5 +117,5 @@ export default function App() {
   }
 
   if (!authed) return <LoginPage onLogin={() => setAuthed(true)} />;
-  return <AppContent />;
+  return <AppContent onSignOut={() => setAuthed(false)} />;
 }

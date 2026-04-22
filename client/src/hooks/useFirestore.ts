@@ -12,7 +12,6 @@ export function useFirestore<T>(key: string, initialValue: T) {
   });
 
   useEffect(() => {
-    // Load initial value from server
     apiFetch<{ value: T | null }>(`/api/data/${key}`)
       .then(({ value }) => {
         if (value !== null) {
@@ -20,20 +19,29 @@ export function useFirestore<T>(key: string, initialValue: T) {
           localStorage.setItem(key, JSON.stringify(value));
         }
       })
-      .catch(console.error);
+      .catch((err) => console.error(`[useFirestore:${key}] GET failed:`, err));
 
-    // Subscribe to real-time updates via SSE
-    const es = apiStream(`/api/data/${key}/stream`);
-    es.onmessage = (e: MessageEvent) => {
-      const { value } = JSON.parse(e.data) as { value: T | null };
-      if (value !== null) {
-        setStoredValue(value);
-        localStorage.setItem(key, JSON.stringify(value));
-      }
-    };
-    es.onerror = () => es.close();
+    let es: EventSource;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+    let cancelled = false;
 
-    return () => es.close();
+    function connect() {
+      es = apiStream(`/api/data/${key}/stream`);
+      es.onmessage = (e: MessageEvent) => {
+        const { value } = JSON.parse(e.data) as { value: T | null };
+        if (value !== null) {
+          setStoredValue(value);
+          localStorage.setItem(key, JSON.stringify(value));
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        if (!cancelled) reconnectTimer = setTimeout(connect, 3000);
+      };
+    }
+
+    connect();
+    return () => { cancelled = true; clearTimeout(reconnectTimer); es.close(); };
   }, [key]);
 
   const setValue = (value: T) => {
@@ -41,8 +49,8 @@ export function useFirestore<T>(key: string, initialValue: T) {
     localStorage.setItem(key, JSON.stringify(value));
     apiFetch(`/api/data/${key}`, {
       method: 'PUT',
-      body:   JSON.stringify({ value }),
-    }).catch(console.error);
+      body: JSON.stringify({ value }),
+    }).catch((err) => console.error(`[useFirestore:${key}] PUT failed:`, err));
   };
 
   return [storedValue, setValue] as const;
