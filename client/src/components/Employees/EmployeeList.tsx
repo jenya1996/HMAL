@@ -36,6 +36,8 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
   const dragRow = useRef<string | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
   const csvInput = useRef<HTMLInputElement>(null);
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkFields, setBulkFields] = useState<{ status: string; role: string; custom: Record<string, string> }>({ status: '', role: '', custom: {} });
 
   const visibleCols = columnDefs.filter(c => c.visible);
   const customCols = columnDefs.filter(c => !c.builtin);
@@ -118,6 +120,25 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
     console.log('[EmployeeList] new employees array length:', next.length);
     onUpdate(next);
     setShowForm(false); setEditEmployee(undefined); setSelected(new Set());
+  }
+  function openBulkEdit() {
+    setBulkFields({ status: '', role: '', custom: {} });
+    setShowBulkEdit(true);
+  }
+  function applyBulkEdit() {
+    const ids = Array.from(selected);
+    const next = employees.map(e => {
+      if (!ids.includes(e.id)) return e;
+      const updated = { ...e };
+      if (bulkFields.status) updated.status = bulkFields.status as Employee['status'];
+      if (bulkFields.role.trim()) updated.role = bulkFields.role.trim();
+      const customUpdates = Object.entries(bulkFields.custom).filter(([, v]) => v.trim());
+      if (customUpdates.length) updated.customFields = { ...e.customFields, ...Object.fromEntries(customUpdates.map(([k, v]) => [k, v.trim()])) };
+      return updated;
+    });
+    onUpdate(next);
+    setShowBulkEdit(false);
+    setSelected(new Set());
   }
   function handleDelete(ids: string[]) {
     console.log('[EmployeeList] handleDelete — deleting ids:', ids);
@@ -212,6 +233,12 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
           <button onClick={() => { setEditEmployee(employees.find(e => e.id === selectedArr[0])); setShowForm(true); }}
             style={{ padding: '8px 16px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             Edit
+          </button>
+        )}
+        {selectedArr.length > 1 && (
+          <button onClick={openBulkEdit}
+            style={{ padding: '8px 16px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            Edit ({selectedArr.length})
           </button>
         )}
         {selectedArr.length > 0 && (
@@ -321,6 +348,55 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
           onSave={handleSave}
           onClose={() => { setShowForm(false); setEditEmployee(undefined); }}
         />
+      )}
+
+      {showBulkEdit && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '28px', maxWidth: '420px', width: '90%' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>Bulk Edit</h3>
+            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>
+              Editing {selectedArr.length} soldiers. Only filled fields will be applied.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>Status</label>
+                <select value={bulkFields.status} onChange={e => setBulkFields(f => ({ ...f, status: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #e2e8f0', fontSize: '14px', background: 'white' }}>
+                  <option value="">— no change —</option>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Annexation">Annexation</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>Role</label>
+                <input value={bulkFields.role} onChange={e => setBulkFields(f => ({ ...f, role: e.target.value }))}
+                  placeholder="leave blank to keep current"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #e2e8f0', fontSize: '14px', boxSizing: 'border-box' }} />
+              </div>
+              {customCols.map(col => (
+                <div key={col.key}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>{col.label}</label>
+                  {col.fieldType === 'dropdown' && col.options?.length ? (
+                    <select value={bulkFields.custom[col.key] ?? ''} onChange={e => setBulkFields(f => ({ ...f, custom: { ...f.custom, [col.key]: e.target.value } }))}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #e2e8f0', fontSize: '14px', background: 'white' }}>
+                      <option value="">— no change —</option>
+                      {col.options.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : (
+                    <input value={bulkFields.custom[col.key] ?? ''} onChange={e => setBulkFields(f => ({ ...f, custom: { ...f.custom, [col.key]: e.target.value } }))}
+                      placeholder="leave blank to keep current"
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #e2e8f0', fontSize: '14px', boxSizing: 'border-box' }} />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px' }}>
+              <button onClick={() => setShowBulkEdit(false)} style={{ padding: '8px 20px', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', fontSize: '14px', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={applyBulkEdit} style={{ padding: '8px 20px', border: 'none', borderRadius: '6px', background: '#2563eb', color: 'white', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Apply to {selectedArr.length} soldiers</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {deleteIds && (
