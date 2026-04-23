@@ -419,6 +419,25 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
                       <option value="">— no change —</option>
                       {col.options.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
+                  ) : col.fieldType === 'multiselect' && col.options?.length ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '8px', border: '1.5px solid #e2e8f0', borderRadius: '6px' }}>
+                      {col.options.map(opt => {
+                        const val = bulkFields.custom[col.key] ?? '';
+                        const checked = val.split('|').filter(Boolean).includes(opt);
+                        return (
+                          <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px' }}>
+                            <input type="checkbox" checked={checked} style={{ accentColor: '#2563eb' }}
+                              onChange={() => {
+                                const parts = val.split('|').filter(Boolean);
+                                const next = checked ? parts.filter(p => p !== opt) : [...parts, opt];
+                                setBulkFields(f => ({ ...f, custom: { ...f.custom, [col.key]: next.join('|') } }));
+                              }}
+                            />
+                            {opt}
+                          </label>
+                        );
+                      })}
+                    </div>
                   ) : (
                     <input value={bulkFields.custom[col.key] ?? ''} onChange={e => setBulkFields(f => ({ ...f, custom: { ...f.custom, [col.key]: e.target.value } }))}
                       placeholder="leave blank to keep current"
