@@ -42,6 +42,7 @@ export interface ColumnDef {
   builtin: boolean; // built-in columns cannot be deleted
   fieldType?: FieldType; // custom columns only, defaults to 'text'
   options?: string[];    // for dropdown and multiselect
+  optionColors?: Record<string, string>; // row background color per option value
 }
 
 export interface TaskTemplate {
@@ -52,6 +53,7 @@ export interface TaskTemplate {
   requiredSoldiers: number;
   color: string;
   certifications: string[]; // required certifications, e.g. ["Driver", "Commander"]
+  certLimits?: Record<string, number>; // max soldiers per cert, defaults to 1
   groupId?: string;
 }
 
@@ -69,11 +71,17 @@ export type TaskAssignments = Record<string, Record<string, string[]>>;
 export type TaskRoles = Record<string, Record<string, Record<string, string>>>;
 
 export const DEFAULT_COLUMNS: ColumnDef[] = [
-  { key: 'id',        label: 'ID',         visible: true, builtin: true },
-  { key: 'name',      label: 'Name',       visible: true, builtin: true },
-  { key: 'email',     label: 'Email',      visible: true, builtin: true },
-  { key: 'phone',     label: 'Phone',      visible: true, builtin: true },
-  { key: 'privateId', label: 'Private ID', visible: true, builtin: true },
-  { key: 'role',      label: 'Role',       visible: true, builtin: true },
-  { key: 'status',    label: 'Status',     visible: true, builtin: true },
+  { key: 'id',         label: 'ID',         visible: true, builtin: true },
+  { key: 'name',       label: 'Name',       visible: true, builtin: true },
+  { key: 'email',      label: 'Email',      visible: true, builtin: true },
+  { key: 'phone',      label: 'Phone',      visible: true, builtin: true },
+  { key: 'privateId',  label: 'Private ID', visible: true, builtin: true },
+  { key: 'role',       label: 'Role',       visible: true, builtin: true },
+  {
+    key: 'department', label: 'Department', visible: true, builtin: true,
+    fieldType: 'dropdown',
+    options: ['Alpha', 'Bravo', 'Charlie', 'Delta'],
+    optionColors: { Alpha: '#dbeafe', Bravo: '#dcfce7', Charlie: '#fef9c3', Delta: '#fce7f3' },
+  },
+  { key: 'status',     label: 'Status',     visible: true, builtin: true },
 ];

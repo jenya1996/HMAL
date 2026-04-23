@@ -180,6 +180,10 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
   const requiredCerts = tpl.certifications ?? [];
   const full          = assigned.length >= tpl.requiredSoldiers;
 
+  const certLimit = (cert: string) => tpl.certLimits?.[cert] ?? 1;
+  const certCount = (cert: string) => Object.values(slotRoles).filter(r => r === cert).length;
+  const certFull  = (cert: string) => certCount(cert) >= certLimit(cert);
+
   // Returns overwork label (e.g. "8h+8h") if assigning this soldier would exceed the group alert threshold.
   function getOverworkWarning(empId: string): string {
     if (!group || !tpl.groupId) return '';
@@ -208,6 +212,7 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
   const certSections = requiredCerts.map(cert => ({
     label:    cert,
     soldiers: sortedSoldiers(unassigned.filter(({ emp }) => soldierCerts(emp, certSourceKey).includes(cert))),
+    isFull:   certFull(cert),
   }));
 
   const otherSoldiers = sortedSoldiers(unassigned.filter(({ emp }) => {
@@ -215,51 +220,55 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
     return !requiredCerts.some(rc => certs.includes(rc));
   }));
 
-  function renderSoldierRow({ emp, status }: { emp: Employee; status: CellStatus }, isAssignedRow: boolean, cert?: string) {
-    const st           = STATUS_STYLE[status as CellStatus];
-    const blockedUntil = isAssignedRow ? null : getBlockedUntil(emp.id);
-    const isBlocked    = blockedUntil !== null;
-    const owLabel      = isAssignedRow || isBlocked ? '' : getOverworkWarning(emp.id);
-    const isOverwork   = owLabel !== '';
-    const bgColor      = isBlocked ? '#f8fafc' : isOverwork ? '#fef2f2' : isAssignedRow ? tpl.color + '18' : '#f8fafc';
-    const borderColor  = isBlocked ? '#f1f5f9' : isOverwork ? '#fca5a5' : isAssignedRow ? tpl.color + '88' : '#e2e8f0';
-    const nameColor    = isBlocked ? '#94a3b8' : isOverwork ? '#dc2626' : st?.color ?? '#1e293b';
+  function renderSoldierRow({ emp, status }: { emp: Employee; status: CellStatus }, isAssignedRow: boolean, cert?: string, isCertFull?: boolean) {
+    const st              = STATUS_STYLE[status as CellStatus];
+    const blockedUntil    = isAssignedRow ? null : getBlockedUntil(emp.id);
+    const isBlocked       = blockedUntil !== null;
+    const isSlotFull      = !isAssignedRow && !!isCertFull;
+    const isDisabled      = isBlocked || isSlotFull;
+    const owLabel         = isAssignedRow || isDisabled ? '' : getOverworkWarning(emp.id);
+    const isOverwork      = owLabel !== '';
+    const bgColor         = isDisabled ? '#f8fafc' : isOverwork ? '#fef2f2' : isAssignedRow ? tpl.color + '18' : '#f8fafc';
+    const borderColor     = isDisabled ? '#f1f5f9' : isOverwork ? '#fca5a5' : isAssignedRow ? tpl.color + '88' : '#e2e8f0';
+    const nameColor       = isDisabled ? '#94a3b8' : isOverwork ? '#dc2626' : st?.color ?? '#1e293b';
     return (
       <div key={emp.id}
-        onClick={() => !isBlocked && onToggle(emp.id, cert)}
-        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 10px', borderRadius: '8px', cursor: isBlocked ? 'default' : 'pointer', background: bgColor, border: `1px solid ${borderColor}`, opacity: isBlocked ? 0.55 : 1, transition: 'all 0.1s' }}>
-        <div style={{ width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0, border: `2px solid ${isBlocked ? '#e2e8f0' : isOverwork ? '#fca5a5' : isAssignedRow ? tpl.color : '#cbd5e1'}`, background: isAssignedRow ? tpl.color : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'white', fontWeight: '700' }}>
+        onClick={() => !isDisabled && onToggle(emp.id, cert)}
+        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 10px', borderRadius: '8px', cursor: isDisabled ? 'default' : 'pointer', background: bgColor, border: `1px solid ${borderColor}`, opacity: isDisabled ? 0.5 : 1, transition: 'all 0.1s' }}>
+        <div style={{ width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0, border: `2px solid ${isDisabled ? '#e2e8f0' : isOverwork ? '#fca5a5' : isAssignedRow ? tpl.color : '#cbd5e1'}`, background: isAssignedRow ? tpl.color : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'white', fontWeight: '700' }}>
           {isAssignedRow ? '✓' : ''}
         </div>
         <span style={{ fontSize: '12px', fontWeight: isOverwork ? '700' : '500', color: nameColor, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {emp.name.split(' ').slice(0, 2).join(' ')}
         </span>
-        {isBlocked && <span style={{ fontSize: '10px', fontWeight: '600', color: '#94a3b8', flexShrink: 0, whiteSpace: 'nowrap' }}>rest {blockedUntil}</span>}
+        {isBlocked  && <span style={{ fontSize: '10px', fontWeight: '600', color: '#94a3b8', flexShrink: 0, whiteSpace: 'nowrap' }}>rest {blockedUntil}</span>}
+        {isSlotFull && <span style={{ fontSize: '10px', fontWeight: '600', color: '#94a3b8', flexShrink: 0, whiteSpace: 'nowrap' }}>slot full</span>}
         {isOverwork && <span style={{ fontSize: '10px', fontWeight: '700', color: '#dc2626', flexShrink: 0, whiteSpace: 'nowrap' }}>⚠ {owLabel}</span>}
         {isAssignedRow && slotRoles[emp.id] && (
           <span style={{ fontSize: '10px', fontWeight: '700', padding: '1px 7px', borderRadius: '9999px', background: tpl.color + '22', color: tpl.color, border: `1px solid ${tpl.color}44`, flexShrink: 0 }}>
             {slotRoles[emp.id]}
           </span>
         )}
-        {!isBlocked && !isOverwork && st && <span style={{ fontSize: '10px', fontWeight: '700', color: st.color, flexShrink: 0 }}>{st.label}</span>}
+        {!isDisabled && !isOverwork && st && <span style={{ fontSize: '10px', fontWeight: '700', color: st.color, flexShrink: 0 }}>{st.label}</span>}
       </div>
     );
   }
 
-  function renderSection(label: string, cert: string | undefined, soldiers: Array<{ emp: Employee; status: CellStatus }>, isAssignedSection: boolean, alwaysShow = false) {
+  function renderSection(label: string, cert: string | undefined, soldiers: Array<{ emp: Employee; status: CellStatus }>, isAssignedSection: boolean, isCertFull?: boolean, alwaysShow = false) {
     if (soldiers.length === 0 && !isAssignedSection && !alwaysShow) return null;
-    const headerColor = isAssignedSection ? '#15803d' : '#94a3b8';
+    const headerColor = isAssignedSection ? '#15803d' : isCertFull ? '#94a3b8' : '#94a3b8';
     return (
       <div key={label} style={{ marginBottom: '10px' }}>
         <div style={{ fontSize: '10px', fontWeight: '700', color: headerColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px', paddingLeft: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
           {label}
           {isAssignedSection && <span style={{ background: '#dcfce7', color: '#15803d', borderRadius: '9999px', padding: '0px 6px', fontSize: '10px', fontWeight: '700' }}>{soldiers.length}</span>}
+          {isCertFull && !isAssignedSection && <span style={{ background: '#f1f5f9', color: '#94a3b8', borderRadius: '9999px', padding: '0px 6px', fontSize: '10px', fontWeight: '700' }}>full</span>}
         </div>
         {soldiers.length === 0 ? (
           <div style={{ fontSize: '11px', color: '#cbd5e1', fontStyle: 'italic', paddingLeft: '2px' }}>None</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-            {soldiers.map(s => renderSoldierRow(s, isAssignedSection, cert))}
+            {soldiers.map(s => renderSoldierRow(s, isAssignedSection, cert, isCertFull))}
           </div>
         )}
       </div>
@@ -281,9 +290,16 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
         </div>
         {requiredCerts.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-            {requiredCerts.map(c => (
-              <span key={c} style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '9999px', background: tpl.color + '18', color: tpl.color, border: `1px solid ${tpl.color}44` }}>{c}</span>
-            ))}
+            {requiredCerts.map(c => {
+              const cnt = certCount(c);
+              const lim = certLimit(c);
+              const isFull = cnt >= lim;
+              return (
+                <span key={c} style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '9999px', background: isFull ? tpl.color + '33' : tpl.color + '18', color: tpl.color, border: `1px solid ${tpl.color}${isFull ? '88' : '44'}` }}>
+                  {c} {cnt}/{lim}
+                </span>
+              );
+            })}
           </div>
         )}
         <div style={{ marginTop: '6px', fontSize: '12px', fontWeight: '700', color: full ? '#15803d' : '#dc2626' }}>
@@ -293,7 +309,7 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
       {/* Sections */}
       <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column' }}>
         {renderSection('Assigned', undefined, assignedSoldiers, true)}
-        {certSections.map(({ label, soldiers }) => renderSection(label, label, soldiers, false, true))}
+        {certSections.map(({ label, soldiers, isFull }) => renderSection(label, label, soldiers, false, isFull, true))}
         {renderSection('Other Soldiers', '', otherSoldiers, false)}
       </div>
     </div>

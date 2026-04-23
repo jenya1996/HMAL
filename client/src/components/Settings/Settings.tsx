@@ -34,8 +34,9 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   const [tplEnd, setTplEnd]           = useState('16:00');
   const [tplSoldiers, setTplSoldiers] = useState(1);
   const [tplColor, setTplColor]       = useState(PRESET_COLORS[0]);
-  const [tplCerts, setTplCerts]         = useState<string[]>([]);
-  const [tplGroupId, setTplGroupId]     = useState<string>('');
+  const [tplCerts, setTplCerts]           = useState<string[]>([]);
+  const [tplCertLimits, setTplCertLimits] = useState<Record<string, number>>({});
+  const [tplGroupId, setTplGroupId]       = useState<string>('');
   const [editingTpl, setEditingTpl]     = useState<string | null>(null);
   const [certSourceKey, setCertSourceKey] = useFirestore<string>('hmal-cert-source-col', '');
 
@@ -46,7 +47,7 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
 
   function resetTplForm() {
     setTplName(''); setTplStart('08:00'); setTplEnd('16:00');
-    setTplSoldiers(1); setTplColor(PRESET_COLORS[0]); setTplCerts([]); setTplGroupId('');
+    setTplSoldiers(1); setTplColor(PRESET_COLORS[0]); setTplCerts([]); setTplCertLimits({}); setTplGroupId('');
   }
 
   function addGroup() {
@@ -66,13 +67,14 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   function addTemplate() {
     const name = tplName.trim();
     if (!name) return;
+    const certLimits = Object.fromEntries(tplCerts.map(c => [c, tplCertLimits[c] ?? 1]));
     if (editingTpl) {
       onUpdateTaskTemplates(taskTemplates.map(t =>
-        t.id === editingTpl ? { ...t, name, startTime: tplStart, endTime: tplEnd, requiredSoldiers: tplSoldiers, color: tplColor, certifications: tplCerts, groupId: tplGroupId || undefined } : t
+        t.id === editingTpl ? { ...t, name, startTime: tplStart, endTime: tplEnd, requiredSoldiers: tplSoldiers, color: tplColor, certifications: tplCerts, certLimits, groupId: tplGroupId || undefined } : t
       ));
       setEditingTpl(null);
     } else {
-      onUpdateTaskTemplates([...taskTemplates, { id: `tpl_${Date.now()}`, name, startTime: tplStart, endTime: tplEnd, requiredSoldiers: tplSoldiers, color: tplColor, certifications: tplCerts, groupId: tplGroupId || undefined }]);
+      onUpdateTaskTemplates([...taskTemplates, { id: `tpl_${Date.now()}`, name, startTime: tplStart, endTime: tplEnd, requiredSoldiers: tplSoldiers, color: tplColor, certifications: tplCerts, certLimits, groupId: tplGroupId || undefined }]);
     }
     resetTplForm();
   }
@@ -85,6 +87,7 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
     setTplSoldiers(tpl.requiredSoldiers);
     setTplColor(tpl.color);
     setTplCerts(tpl.certifications ?? []);
+    setTplCertLimits(tpl.certLimits ?? {});
     setTplGroupId(tpl.groupId ?? '');
   }
 
@@ -150,7 +153,15 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   function removeOption(key: string, opt: string) {
     const col = columnDefs.find(c => c.key === key);
     if (!col) return;
-    updateCol(key, { options: (col.options ?? []).filter(o => o !== opt) });
+    const newColors = { ...col.optionColors };
+    delete newColors[opt];
+    updateCol(key, { options: (col.options ?? []).filter(o => o !== opt), optionColors: newColors });
+  }
+
+  function updateOptionColor(key: string, opt: string, color: string) {
+    const col = columnDefs.find(c => c.key === key);
+    if (!col) return;
+    updateCol(key, { optionColors: { ...col.optionColors, [opt]: color } });
   }
 
   function onDragStart(i: number) { dragIdx.current = i; }
@@ -249,8 +260,8 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
                   </select>
                 )}
 
-                {/* Options toggle (dropdown/multiselect) */}
-                {!col.builtin && needsOptions(col.fieldType) && (
+                {/* Options toggle (dropdown/multiselect) — shown for all such columns, builtin or not */}
+                {needsOptions(col.fieldType) && (
                   <button
                     onClick={e => { e.stopPropagation(); setExpandedKey(expandedKey === col.key ? null : col.key); }}
                     style={{
@@ -291,14 +302,27 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
               {/* Options editor */}
               {expandedKey === col.key && needsOptions(col.fieldType) && (
                 <div style={{ border: '2px solid #e2e8f0', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '12px', background: '#f8fafc' }}>
+                  {col.builtin && (
+                    <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 8px', fontStyle: 'italic' }}>
+                      Click the color dot inside each option to set the row background color.
+                    </p>
+                  )}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
                     {(col.options ?? []).length === 0 && (
                       <span style={{ fontSize: '13px', color: '#94a3b8' }}>No options yet. Add some below.</span>
                     )}
                     {(col.options ?? []).map(opt => (
-                      <span key={opt} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px', borderRadius: '9999px', background: '#e0e7ff', color: '#3730a3', fontSize: '12px', fontWeight: '500' }}>
+                      <span key={opt} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px 3px 4px', borderRadius: '9999px', background: col.optionColors?.[opt] ?? '#e0e7ff', color: '#1e293b', fontSize: '12px', fontWeight: '500' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0 }} title="Row color">
+                          <input
+                            type="color"
+                            value={col.optionColors?.[opt] ?? '#e0e7ff'}
+                            onChange={e => updateOptionColor(col.key, opt, e.target.value)}
+                            style={{ width: '14px', height: '14px', border: '1px solid rgba(0,0,0,0.2)', cursor: 'pointer', padding: 0, borderRadius: '50%', outline: 'none', flexShrink: 0 }}
+                          />
+                        </label>
                         {opt}
-                        <button onClick={() => removeOption(col.key, opt)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6366f1', fontWeight: '700', padding: '0 2px', fontSize: '12px' }}>×</button>
+                        <button onClick={() => removeOption(col.key, opt)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(0,0,0,0.4)', fontWeight: '700', padding: '0 1px', fontSize: '13px', lineHeight: 1 }}>×</button>
                       </span>
                     ))}
                   </div>
@@ -507,10 +531,38 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                 {certPool.map(c => {
                   const selected = tplCerts.includes(c);
+                  const limit = tplCertLimits[c] ?? 1;
                   return (
-                    <button key={c} onClick={() => toggleCert(c)} style={{ padding: '4px 12px', borderRadius: '9999px', cursor: 'pointer', fontSize: '12px', fontWeight: selected ? '700' : '400', background: selected ? tplColor + '22' : 'white', border: `1.5px solid ${selected ? tplColor : '#e2e8f0'}`, color: selected ? tplColor : '#64748b', transition: 'all 0.1s' }}>
-                      {selected ? '✓ ' : ''}{c}
-                    </button>
+                    <div key={c} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                      <button onClick={() => toggleCert(c)} style={{
+                        padding: '4px 10px', cursor: 'pointer', fontSize: '12px',
+                        fontWeight: selected ? '700' : '400',
+                        background: selected ? tplColor + '22' : 'white',
+                        border: `1.5px solid ${selected ? tplColor : '#e2e8f0'}`,
+                        borderRight: selected ? 'none' : undefined,
+                        borderRadius: selected ? '9999px 0 0 9999px' : '9999px',
+                        color: selected ? tplColor : '#64748b',
+                        transition: 'all 0.1s',
+                      }}>
+                        {selected ? '✓ ' : ''}{c}
+                      </button>
+                      {selected && (
+                        <input
+                          type="number" min={1} max={99}
+                          value={limit}
+                          onChange={e => setTplCertLimits(prev => ({ ...prev, [c]: Math.max(1, parseInt(e.target.value) || 1) }))}
+                          onClick={e => e.stopPropagation()}
+                          title="Max soldiers for this cert"
+                          style={{
+                            width: '38px', padding: '4px 4px', textAlign: 'center',
+                            border: `1.5px solid ${tplColor}`, borderLeft: 'none',
+                            borderRadius: '0 9999px 9999px 0',
+                            fontSize: '12px', fontWeight: '700',
+                            color: tplColor, background: tplColor + '22', outline: 'none',
+                          }}
+                        />
+                      )}
+                    </div>
                   );
                 })}
               </div>
