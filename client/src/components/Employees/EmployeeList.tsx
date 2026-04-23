@@ -218,9 +218,12 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
           return (
             <td key={col.key} style={{ padding: '8px 16px' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                {parts.map(p => (
-                  <span key={p} style={{ padding: '2px 8px', borderRadius: '9999px', fontSize: '11px', fontWeight: '500', background: '#e0e7ff', color: '#3730a3' }}>{p}</span>
-                ))}
+                {parts.map(p => {
+                  const bg = col.optionColors?.[p] ?? '#e0e7ff';
+                  return (
+                    <span key={p} style={{ padding: '2px 8px', borderRadius: '9999px', fontSize: '11px', fontWeight: '500', background: bg, color: '#1e293b' }}>{p}</span>
+                  );
+                })}
               </div>
             </td>
           );
