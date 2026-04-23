@@ -43,6 +43,7 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
   const csvInput = useRef<HTMLInputElement>(null);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
   const [bulkFields, setBulkFields] = useState<{ status: string; role: string; department: string; custom: Record<string, string> }>({ status: '', role: '', department: '', custom: {} });
+  const [bulkMultiInitial, setBulkMultiInitial] = useState<Record<string, string>>({});
 
   const visibleCols = columnDefs.filter(c => c.visible);
   const customCols = columnDefs.filter(c => !c.builtin);
@@ -132,7 +133,20 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
     setShowForm(false); setEditEmployee(undefined); setSelected(new Set());
   }
   function openBulkEdit() {
-    setBulkFields({ status: '', role: '', department: '', custom: {} });
+    const selectedEmps = employees.filter(e => selected.has(e.id));
+    // For multiselect columns, pre-check options that ALL selected soldiers already have
+    const multiInitial: Record<string, string> = {};
+    const customInit: Record<string, string> = {};
+    for (const col of customCols.filter(c => c.fieldType === 'multiselect')) {
+      const common = (col.options ?? []).filter(opt =>
+        selectedEmps.every(e => (e.customFields?.[col.key] ?? '').split('|').filter(Boolean).includes(opt))
+      );
+      const val = common.join('|');
+      multiInitial[col.key] = val;
+      customInit[col.key] = val;
+    }
+    setBulkMultiInitial(multiInitial);
+    setBulkFields({ status: '', role: '', department: '', custom: customInit });
     setShowBulkEdit(true);
   }
   function applyBulkEdit() {
@@ -143,8 +157,26 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
       if (bulkFields.status) updated.status = bulkFields.status as Employee['status'];
       if (bulkFields.role.trim()) updated.role = bulkFields.role.trim();
       if (bulkFields.department) updated.department = bulkFields.department;
-      const customUpdates = Object.entries(bulkFields.custom).filter(([, v]) => v.trim());
-      if (customUpdates.length) updated.customFields = { ...e.customFields, ...Object.fromEntries(customUpdates.map(([k, v]) => [k, v.trim()])) };
+      const newCustom = { ...e.customFields };
+      for (const col of customCols) {
+        const val = bulkFields.custom[col.key] ?? '';
+        if (col.fieldType === 'multiselect') {
+          // Compute diff from initial state and apply as a merge (add/remove) to each soldier's existing value
+          const current = new Set(val.split('|').filter(Boolean));
+          const initial = new Set((bulkMultiInitial[col.key] ?? '').split('|').filter(Boolean));
+          const toAdd    = [...current].filter(o => !initial.has(o));
+          const toRemove = [...initial].filter(o => !current.has(o));
+          if (toAdd.length > 0 || toRemove.length > 0) {
+            const existing = new Set((e.customFields?.[col.key] ?? '').split('|').filter(Boolean));
+            toAdd.forEach(o => existing.add(o));
+            toRemove.forEach(o => existing.delete(o));
+            newCustom[col.key] = [...existing].join('|');
+          }
+        } else if (val.trim()) {
+          newCustom[col.key] = val.trim();
+        }
+      }
+      updated.customFields = newCustom;
       return updated;
     });
     onUpdate(next);
