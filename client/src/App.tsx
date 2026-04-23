@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from './lib/api';
 import LoginPage from './components/Auth/LoginPage';
 import { Employee, ColumnDef, DEFAULT_COLUMNS, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup } from './types';
@@ -31,13 +31,44 @@ type Page = 'dashboard' | 'employees' | 'schedule' | 'tasks' | 'settings';
 
 function AppContent({ onSignOut }: { onSignOut: () => void }) {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
+  const [soldierSearch,    setSoldierSearch]    = useState('');
+  const [soldierFilterDept, setSoldierFilterDept] = useState('');
   const [employees,        setEmployees]        = useFirestore<Employee[]>('hmal-soldiers-v2', SAMPLE_EMPLOYEES);
   const [schedule,         setSchedule]         = useFirestore<ScheduleData>('hmal-schedule', {});
   const [columnDefs,       setColumnDefs]       = useFirestore<ColumnDef[]>('hmal-columns-v1', DEFAULT_COLUMNS);
+  const migratedDept = useRef(false);
+  useEffect(() => {
+    if (migratedDept.current || columnDefs.length === 0) return;
+    if (!columnDefs.find(c => c.key === 'department')) {
+      migratedDept.current = true;
+      const deptCol: ColumnDef = {
+        key: 'department', label: 'Department', visible: true, builtin: true,
+        fieldType: 'dropdown',
+        options: ['Alpha', 'Bravo', 'Charlie', 'Delta'],
+        optionColors: { Alpha: '#dbeafe', Bravo: '#dcfce7', Charlie: '#fef9c3', Delta: '#fce7f3' },
+      };
+      const statusIdx = columnDefs.findIndex(c => c.key === 'status');
+      const next = [...columnDefs];
+      next.splice(statusIdx >= 0 ? statusIdx : next.length, 0, deptCol);
+      setColumnDefs(next);
+    }
+  }, [columnDefs]);
   const [taskTemplates,    setTaskTemplates]    = useFirestore<TaskTemplate[]>('hmal-task-templates', []);
   const [taskAssignments,  setTaskAssignments]  = useFirestore<TaskAssignments>('hmal-task-assignments', {});
   const [taskRoles,        setTaskRoles]        = useFirestore<TaskRoles>('hmal-task-roles', {});
   const [taskGroups,       setTaskGroups]       = useFirestore<TaskGroup[]>('hmal-task-groups', []);
+
+  const deptCol = columnDefs.find(c => c.key === 'department');
+  const deptOptions = deptCol?.options ?? [];
+
+  const filteredEmployees = employees.filter(e => {
+    const q = soldierSearch.toLowerCase();
+    const matchSearch = !q ||
+      e.name.toLowerCase().includes(q) ||
+      (e.email ?? '').toLowerCase().includes(q);
+    const matchDept = !soldierFilterDept || e.department === soldierFilterDept;
+    return matchSearch && matchDept;
+  });
 
   const pageTitles: Record<Page, string> = {
     dashboard: 'Dashboard',
@@ -62,13 +93,23 @@ function AppContent({ onSignOut }: { onSignOut: () => void }) {
               departments={[]}
               columnDefs={columnDefs}
               onUpdate={setEmployees}
+              search={soldierSearch}
+              onSearchChange={setSoldierSearch}
+              filterDept={soldierFilterDept}
+              onFilterDeptChange={setSoldierFilterDept}
+              deptOptions={deptOptions}
             />
           )}
           {currentPage === 'schedule' && (
             <ScheduleCalendar
-              employees={employees}
+              employees={filteredEmployees}
               schedule={schedule}
               onUpdate={setSchedule}
+              search={soldierSearch}
+              onSearchChange={setSoldierSearch}
+              filterDept={soldierFilterDept}
+              onFilterDeptChange={setSoldierFilterDept}
+              deptOptions={deptOptions}
             />
           )}
           {currentPage === 'tasks' && (

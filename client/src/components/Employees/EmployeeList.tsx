@@ -7,25 +7,30 @@ interface EmployeeListProps {
   departments: Department[];
   columnDefs: ColumnDef[];
   onUpdate: (employees: Employee[]) => void;
+  search: string;
+  onSearchChange: (v: string) => void;
+  filterDept: string;
+  onFilterDeptChange: (v: string) => void;
+  deptOptions: string[];
 }
 
 type SortDir = 'asc' | 'desc';
 
 function getVal(emp: Employee, key: string): string {
   switch (key) {
-    case 'id':        return emp.soldierId ?? '';
-    case 'name':      return emp.name;
-    case 'email':     return emp.email;
-    case 'phone':     return emp.phone ?? '';
-    case 'privateId': return emp.privateId ?? '';
-    case 'role':      return emp.role ?? '';
-    case 'status':    return emp.status;
-    default:          return emp.customFields?.[key] ?? '';
+    case 'id':         return emp.soldierId ?? '';
+    case 'name':       return emp.name;
+    case 'email':      return emp.email;
+    case 'phone':      return emp.phone ?? '';
+    case 'privateId':  return emp.privateId ?? '';
+    case 'role':       return emp.role ?? '';
+    case 'department': return emp.department ?? '';
+    case 'status':     return emp.status;
+    default:           return emp.customFields?.[key] ?? '';
   }
 }
 
-export default function EmployeeList({ employees, departments, columnDefs, onUpdate }: EmployeeListProps) {
-  const [search, setSearch] = useState('');
+export default function EmployeeList({ employees, departments, columnDefs, onUpdate, search, onSearchChange, filterDept, onFilterDeptChange, deptOptions }: EmployeeListProps) {
   const [showForm, setShowForm] = useState(false);
   const [editEmployee, setEditEmployee] = useState<Employee | undefined>(undefined);
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
@@ -37,10 +42,11 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
   const [csvError, setCsvError] = useState<string | null>(null);
   const csvInput = useRef<HTMLInputElement>(null);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
-  const [bulkFields, setBulkFields] = useState<{ status: string; role: string; custom: Record<string, string> }>({ status: '', role: '', custom: {} });
+  const [bulkFields, setBulkFields] = useState<{ status: string; role: string; department: string; custom: Record<string, string> }>({ status: '', role: '', department: '', custom: {} });
 
   const visibleCols = columnDefs.filter(c => c.visible);
   const customCols = columnDefs.filter(c => !c.builtin);
+  const deptCol = columnDefs.find(c => c.key === 'department');
 
   const handleCSV = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -87,10 +93,14 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
     reader.readAsText(file);
   }, [employees, onUpdate]);
 
-  const filtered = employees.filter(e =>
-    e.name.toLowerCase().includes(search.toLowerCase()) ||
-    e.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = employees.filter(e => {
+    const q = search.toLowerCase();
+    const matchSearch = !q ||
+      e.name.toLowerCase().includes(q) ||
+      e.email.toLowerCase().includes(q);
+    const matchDept = !filterDept || e.department === filterDept;
+    return matchSearch && matchDept;
+  });
 
   const sorted = sortCol
     ? [...filtered].sort((a, b) => {
@@ -122,7 +132,7 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
     setShowForm(false); setEditEmployee(undefined); setSelected(new Set());
   }
   function openBulkEdit() {
-    setBulkFields({ status: '', role: '', custom: {} });
+    setBulkFields({ status: '', role: '', department: '', custom: {} });
     setShowBulkEdit(true);
   }
   function applyBulkEdit() {
@@ -132,6 +142,7 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
       const updated = { ...e };
       if (bulkFields.status) updated.status = bulkFields.status as Employee['status'];
       if (bulkFields.role.trim()) updated.role = bulkFields.role.trim();
+      if (bulkFields.department) updated.department = bulkFields.department;
       const customUpdates = Object.entries(bulkFields.custom).filter(([, v]) => v.trim());
       if (customUpdates.length) updated.customFields = { ...e.customFields, ...Object.fromEntries(customUpdates.map(([k, v]) => [k, v.trim()])) };
       return updated;
@@ -186,7 +197,17 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
       case 'email':     return td(emp.email || '—');
       case 'phone':     return td(emp.phone || '—');
       case 'privateId': return td(emp.privateId || '—');
-      case 'role':      return td(emp.role || '—');
+      case 'role':       return td(emp.role || '—');
+      case 'department': {
+        const dept = emp.department || '';
+        if (!dept) return td('—');
+        const bg = deptCol?.optionColors?.[dept] ?? '#e2e8f0';
+        return (
+          <td key={col.key} style={{ padding: '8px 16px' }}>
+            <span style={{ padding: '2px 10px', borderRadius: '9999px', fontSize: '12px', fontWeight: '500', background: bg, color: '#1e293b', display: 'inline-block' }}>{dept}</span>
+          </td>
+        );
+      }
       case 'status':    return <td key={col.key} style={{ padding: '12px 16px' }}>{statusBadge(emp.status)}</td>;
       default: {
         const val = emp.customFields?.[col.key] ?? '';
@@ -221,9 +242,16 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
         <input
           placeholder="🔍 Search soldiers..."
           value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px', minWidth: '220px', flex: 1 }}
+          onChange={e => onSearchChange(e.target.value)}
+          style={{ padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px', minWidth: '180px', flex: 1 }}
         />
+        {deptOptions.length > 0 && (
+          <select value={filterDept} onChange={e => onFilterDeptChange(e.target.value)}
+            style={{ padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px', background: 'white', cursor: 'pointer', color: filterDept ? '#1e293b' : '#94a3b8' }}>
+            <option value="">All departments</option>
+            {deptOptions.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        )}
         {sortCol && (
           <button onClick={() => setSortCol(null)} style={{ padding: '8px 14px', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', fontSize: '13px', cursor: 'pointer', color: '#64748b' }}>
             Clear Sort
@@ -322,7 +350,7 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
                   onDoubleClick={() => { setEditEmployee(emp); setShowForm(true); }}
                   style={{
                     borderBottom: '1px solid #f1f5f9',
-                    background: selected.has(emp.id) ? '#eff6ff' : rowDragOver === emp.id ? '#f0fdf4' : emp.status === 'Inactive' ? '#fca5a5' : emp.status === 'Annexation' ? '#4ade80' : i % 2 === 0 ? 'white' : '#fafafa',
+                    background: selected.has(emp.id) ? '#eff6ff' : rowDragOver === emp.id ? '#f0fdf4' : emp.status === 'Inactive' ? '#fca5a5' : emp.status === 'Annexation' ? '#4ade80' : (deptCol?.optionColors?.[emp.department] ?? (i % 2 === 0 ? 'white' : '#fafafa')),
                     borderTop: rowDragOver === emp.id ? '2px solid #2563eb' : undefined,
                     transition: 'background 0.1s',
                     cursor: 'pointer',
@@ -344,7 +372,7 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
         <EmployeeForm
           employee={editEmployee}
           departments={departments}
-          customColumns={customCols}
+          columnDefs={columnDefs}
           onSave={handleSave}
           onClose={() => { setShowForm(false); setEditEmployee(undefined); }}
         />
@@ -366,6 +394,14 @@ export default function EmployeeList({ employees, departments, columnDefs, onUpd
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                   <option value="Annexation">Annexation</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>Department</label>
+                <select value={bulkFields.department} onChange={e => setBulkFields(f => ({ ...f, department: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #e2e8f0', fontSize: '14px', background: 'white' }}>
+                  <option value="">— no change —</option>
+                  {(deptCol?.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               </div>
               <div>

@@ -6,6 +6,11 @@ interface ScheduleCalendarProps {
   employees: Employee[];
   schedule: ScheduleData;
   onUpdate: (schedule: ScheduleData) => void;
+  search: string;
+  onSearchChange: (v: string) => void;
+  filterDept: string;
+  onFilterDeptChange: (v: string) => void;
+  deptOptions: string[];
 }
 
 export type ScheduleData = Record<string, Record<string, CellStatus>>;
@@ -116,7 +121,7 @@ function formatColHeader(d: Date, mode: ViewMode): { top: string; bottom: string
 function rightOf(i: number)  { return (NUM_STATUSES - 1 - i) * SUM_COL_W; }
 function bottomOf(i: number) { return (NUM_STATUSES - 1 - i) * SUM_ROW_H; }
 
-export default function ScheduleCalendar({ employees, schedule, onUpdate }: ScheduleCalendarProps) {
+export default function ScheduleCalendar({ employees, schedule, onUpdate, search, onSearchChange, filterDept, onFilterDeptChange, deptOptions }: ScheduleCalendarProps) {
   const today = new Date(); today.setHours(0,0,0,0);
 
   const [viewMode, setViewMode]         = useFirestore<ViewMode>('schedule-view-mode', 'week');
@@ -278,7 +283,34 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate }: Sche
         </button>
       </div>
 
-      {/* Row 2: Custom date range inputs */}
+      {/* Row 2: Soldier filter */}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexShrink: 0 }}>
+        <input
+          placeholder="🔍 Filter soldiers..."
+          value={search}
+          onChange={e => onSearchChange(e.target.value)}
+          style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px', minWidth: '200px', flex: 1 }}
+        />
+        {deptOptions.length > 0 && (
+          <select value={filterDept} onChange={e => onFilterDeptChange(e.target.value)}
+            style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px', background: 'white', cursor: 'pointer', color: filterDept ? '#1e293b' : '#94a3b8' }}>
+            <option value="">All departments</option>
+            {deptOptions.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        )}
+        {(search || filterDept) && (
+          <button
+            onClick={() => { onSearchChange(''); onFilterDeptChange(''); }}
+            style={{ padding: '7px 14px', border: '1px solid #fca5a5', borderRadius: '6px', background: '#fee2e2', color: '#dc2626', fontSize: '13px', fontWeight: '500', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Clear filters
+          </button>
+        )}
+        <span style={{ fontSize: '13px', color: '#64748b', whiteSpace: 'nowrap' }}>
+          {activeEmployees.length} soldier{activeEmployees.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {/* Row 3: Custom date range inputs */}
       {viewMode === 'custom' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flexShrink: 0, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px' }}>
           <span style={{ fontSize: '13px', color: '#475569', fontWeight: '500' }}>From</span>
