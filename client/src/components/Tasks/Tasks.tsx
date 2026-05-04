@@ -65,6 +65,49 @@ function taskAbsRange(dk: string, tpl: TaskTemplate): [number, number] {
 }
 
 
+// Returns the conflicting task's "HH:MM–HH:MM" label, or null if no overlap.
+// Covers: same-day tasks, overnight tasks from the previous day, and tasks on the
+// next day that overlap the tail of an overnight current task.
+function hasTimeConflict(
+  empId: string,
+  templateId: string,
+  dk: string,
+  allTemplates: TaskTemplate[],
+  allAssignments: TaskAssignments,
+): string | null {
+  const tpl = allTemplates.find(t => t.id === templateId);
+  if (!tpl) return null;
+  const [tStart, tEnd] = taskAbsRange(dk, tpl);
+  const isCurrentOvernight = timeToMins(tpl.endTime) < timeToMins(tpl.startTime);
+
+  const prevDate = new Date(dk + 'T00:00:00'); prevDate.setDate(prevDate.getDate() - 1);
+  const nextDate = new Date(dk + 'T00:00:00'); nextDate.setDate(nextDate.getDate() + 1);
+  const prevDk = dateKey(prevDate);
+  const nextDk = dateKey(nextDate);
+
+  for (const other of allTemplates) {
+    if (other.id === templateId) continue;
+    const isOvernightOther = timeToMins(other.endTime) < timeToMins(other.startTime);
+
+    // Same day
+    if ((allAssignments[other.id]?.[dk] ?? []).includes(empId)) {
+      const [oS, oE] = taskAbsRange(dk, other);
+      if (oS < tEnd && oE > tStart) return `${other.startTime}–${other.endTime}`;
+    }
+    // Overnight task that started yesterday and bleeds into today
+    if (isOvernightOther && (allAssignments[other.id]?.[prevDk] ?? []).includes(empId)) {
+      const [oS, oE] = taskAbsRange(prevDk, other);
+      if (oS < tEnd && oE > tStart) return `${other.startTime}–${other.endTime}`;
+    }
+    // Current task is overnight — check tasks on the next day that overlap its extension
+    if (isCurrentOvernight && (allAssignments[other.id]?.[nextDk] ?? []).includes(empId)) {
+      const [oS, oE] = taskAbsRange(nextDk, other);
+      if (oS < tEnd && oE > tStart) return `${other.startTime}–${other.endTime}`;
+    }
+  }
+  return null;
+}
+
 function buildViewDates(mode: ViewMode, anchor: Date, applied: { from: string; to: string } | null): Date[] {
   if (mode === 'day') return [new Date(anchor)];
   if (mode === 'week') {
@@ -158,34 +201,8 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
   const intervalMins = (group?.intervalHours ?? 0) * 60;
   const [tStart, tEnd] = taskAbsRange(dk, tpl);
 
-  // Returns the conflicting task's time range if this soldier is already assigned
-  // to another task on this day whose time overlaps the current task.
   function getTimeConflict(empId: string): string | null {
-    const prevDate = new Date(dk + 'T00:00:00');
-    prevDate.setDate(prevDate.getDate() - 1);
-    const prevDk = dateKey(prevDate);
-
-    for (const otherTpl of allTaskTemplates) {
-      if (otherTpl.id === tpl.id) continue;
-
-      // Same day
-      if ((allTaskAssignments[otherTpl.id]?.[dk] ?? []).includes(empId)) {
-        const [oStart, oEnd] = taskAbsRange(dk, otherTpl);
-        if (oStart < tEnd && oEnd > tStart) {
-          return `${otherTpl.startTime}–${otherTpl.endTime}`;
-        }
-      }
-
-      // Overnight task that started yesterday and extends into today
-      const isOvernightOther = timeToMins(otherTpl.endTime) < timeToMins(otherTpl.startTime);
-      if (isOvernightOther && (allTaskAssignments[otherTpl.id]?.[prevDk] ?? []).includes(empId)) {
-        const [oStart, oEnd] = taskAbsRange(prevDk, otherTpl);
-        if (oStart < tEnd && oEnd > tStart) {
-          return `${otherTpl.startTime}–${otherTpl.endTime}`;
-        }
-      }
-    }
-    return null;
+    return hasTimeConflict(empId, tpl.id, dk, allTaskTemplates, allTaskAssignments);
   }
 
   // Returns null if not blocked, or "HH:MM" when they become available
@@ -423,6 +440,7 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
   function toggleAssignment(templateId: string, dk: string, empId: string, cert?: string) {
     const current    = getAssigned(templateId, dk);
     const isRemoving = current.includes(empId);
+    if (!isRemoving && hasTimeConflict(empId, templateId, dk, taskTemplates, taskAssignments) !== null) return;
     const nextIds    = isRemoving ? current.filter(id => id !== empId) : [...current, empId];
     onUpdateAssignments({ ...taskAssignments, [templateId]: { ...(taskAssignments[templateId] ?? {}), [dk]: nextIds } });
 
