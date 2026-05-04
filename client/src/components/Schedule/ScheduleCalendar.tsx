@@ -481,7 +481,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
             <thead>
               <tr style={{ background: '#f8fafc' }}>
                 {/* Top-left corner */}
-                <th style={{ ...stickyCorner, minWidth: '160px', padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#374151', background: '#f8fafc', borderRight: '2px solid #475569', borderBottom: '2px solid #475569' }}>
+                <th style={{ ...stickyCorner, minWidth: '160px', padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#374151', background: '#f8fafc', borderTop: '2px solid #475569', borderLeft: '2px solid #475569', borderRight: '2px solid #475569', borderBottom: '2px solid #475569' }}>
                   Soldier
                 </th>
 
@@ -497,7 +497,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
                       borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #e2e8f0', minWidth: colMinWidth,
                       borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined,
                       background: todayCol ? '#eff6ff' : weekend ? '#fdf4ff' : '#f8fafc',
-                      borderTop: todayCol ? '2px solid #2563eb' : weekend ? '2px solid #e9d5ff' : undefined,
+                      borderTop: todayCol ? '2px solid #2563eb' : weekend ? '2px solid #e9d5ff' : '2px solid #475569',
                       borderBottom: '2px solid #475569',
                     }}>
                       <div style={{ padding: '6px 4px' }}>
@@ -516,8 +516,9 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
                       position: 'sticky', top: 0, right: rightOf(i), zIndex: 3,
                       width: SUM_COL_W, minWidth: SUM_COL_W, padding: '4px 2px',
                       background: '#f1f5f9',
+                      borderTop: '2px solid #475569',
                       borderLeft: i === 0 ? '2px solid #475569' : undefined,
-                      borderRight: '1px solid #e2e8f0',
+                      borderRight: i === NUM_STATUSES - 1 ? '2px solid #475569' : '1px solid #e2e8f0',
                       borderBottom: '2px solid #475569',
                       textAlign: 'center',
                     }}>
@@ -536,7 +537,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
                 return (
                   <tr key={emp.id} style={{ background: rowBg }}>
                     {/* Sticky left: name */}
-                    <td style={{ ...stickyLeft, padding: '8px 16px', fontSize: '13px', fontWeight: '500', color: '#1e293b', whiteSpace: 'nowrap', background: rowBg, borderRight: '2px solid #475569' }}>
+                    <td style={{ ...stickyLeft, padding: '8px 16px', fontSize: '13px', fontWeight: '500', color: '#1e293b', whiteSpace: 'nowrap', background: rowBg, borderLeft: '2px solid #475569', borderRight: '2px solid #475569' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <div style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0, background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', color: '#2563eb', fontSize: '11px' }}>
                           {emp.name.split(' ').map(n => n[0]).join('')}
@@ -585,7 +586,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
                       const count = viewDates.filter(d => getStatus(emp.id, d) === statusKey).length;
                       const sumBg = rowIdx % 2 === 0 ? '#f8fafc' : '#f1f5f9';
                       return (
-                        <td key={`sr-${statusKey}`} style={{ position: 'sticky', right: rightOf(i), width: SUM_COL_W, minWidth: SUM_COL_W, padding: '6px 2px', textAlign: 'center', fontSize: '12px', fontWeight: '700', background: sumBg, borderLeft: i === 0 ? '2px solid #475569' : undefined, borderRight: '1px solid #e2e8f0' }}>
+                        <td key={`sr-${statusKey}`} style={{ position: 'sticky', right: rightOf(i), width: SUM_COL_W, minWidth: SUM_COL_W, padding: '6px 2px', textAlign: 'center', fontSize: '12px', fontWeight: '700', background: sumBg, borderLeft: i === 0 ? '2px solid #475569' : undefined, borderRight: i === NUM_STATUSES - 1 ? '2px solid #475569' : '1px solid #e2e8f0' }}>
                           {count > 0
                             ? <span style={{ display: 'inline-block', background: cfg.bg, color: cfg.color, borderRadius: '4px', padding: '1px 5px', fontWeight: '700', fontSize: '11px' }}>{count}</span>
                             : <span style={{ color: '#d1d5db' }}>·</span>}
@@ -605,7 +606,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
                 return (
                   <tr key={statusKey}>
                     {/* Bottom-left: label */}
-                    <td style={{ ...tdBase, left: 0, zIndex: 3, padding: '0 16px', whiteSpace: 'nowrap', borderRight: '2px solid #475569', borderTop: i === 0 ? '2px solid #475569' : undefined }}>
+                    <td style={{ ...tdBase, left: 0, zIndex: 3, padding: '0 16px', whiteSpace: 'nowrap', borderLeft: '2px solid #475569', borderRight: '2px solid #475569', borderTop: i === 0 ? '2px solid #475569' : undefined, borderBottom: i === NUM_STATUSES - 1 ? '2px solid #475569' : undefined }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <div style={{ width: '20px', height: '20px', borderRadius: '4px', flexShrink: 0, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '10px' }}>
                           {cfg.label}
@@ -619,7 +620,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
                       const count    = activeEmployees.filter(emp => getStatus(emp.id, d) === statusKey).length;
                       const todayCol = isToday(d);
                       return (
-                        <td key={dateKey(d)} style={{ ...tdBase, zIndex: 1, padding: '0 2px', textAlign: 'center', background: todayCol ? '#f0f7ff' : isWeekend(d) ? '#faf5ff' : '#f8fafc', borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #f1f5f9', borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined, borderTop: i === 0 ? '2px solid #475569' : undefined }}>
+                        <td key={dateKey(d)} style={{ ...tdBase, zIndex: 1, padding: '0 2px', textAlign: 'center', background: todayCol ? '#f0f7ff' : isWeekend(d) ? '#faf5ff' : '#f8fafc', borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #f1f5f9', borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined, borderTop: i === 0 ? '2px solid #475569' : undefined, borderBottom: i === NUM_STATUSES - 1 ? '2px solid #475569' : undefined }}>
                           {count > 0
                             ? <span style={{ display: 'inline-block', background: cfg.bg, color: cfg.color, borderRadius: '4px', padding: '1px 5px', fontWeight: '700', fontSize: '11px' }}>{count}</span>
                             : <span style={{ color: '#d1d5db' }}>·</span>}
@@ -629,7 +630,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
 
                     {/* Bottom-right corners */}
                     {STATUSES.map((k, j) => (
-                      <td key={`bc-${k}`} style={{ ...tdBase, position: 'sticky', bottom, right: rightOf(j), zIndex: 2, borderLeft: j === 0 ? '2px solid #475569' : undefined, borderTop: i === 0 ? '2px solid #475569' : undefined, background: '#eef2f7' }} />
+                      <td key={`bc-${k}`} style={{ ...tdBase, position: 'sticky', bottom, right: rightOf(j), zIndex: 2, borderLeft: j === 0 ? '2px solid #475569' : undefined, borderRight: j === NUM_STATUSES - 1 ? '2px solid #475569' : undefined, borderTop: i === 0 ? '2px solid #475569' : undefined, borderBottom: i === NUM_STATUSES - 1 ? '2px solid #475569' : undefined, background: '#eef2f7' }} />
                     ))}
                   </tr>
                 );
