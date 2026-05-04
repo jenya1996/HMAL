@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Employee, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup } from '../../types';
 import { ScheduleData, CellStatus } from '../Schedule/ScheduleCalendar';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 type ViewMode = 'day' | 'week' | 'month' | 'custom';
 
@@ -157,6 +158,36 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
   const intervalMins = (group?.intervalHours ?? 0) * 60;
   const [tStart, tEnd] = taskAbsRange(dk, tpl);
 
+  // Returns the conflicting task's time range if this soldier is already assigned
+  // to another task on this day whose time overlaps the current task.
+  function getTimeConflict(empId: string): string | null {
+    const prevDate = new Date(dk + 'T00:00:00');
+    prevDate.setDate(prevDate.getDate() - 1);
+    const prevDk = dateKey(prevDate);
+
+    for (const otherTpl of allTaskTemplates) {
+      if (otherTpl.id === tpl.id) continue;
+
+      // Same day
+      if ((allTaskAssignments[otherTpl.id]?.[dk] ?? []).includes(empId)) {
+        const [oStart, oEnd] = taskAbsRange(dk, otherTpl);
+        if (oStart < tEnd && oEnd > tStart) {
+          return `${otherTpl.startTime}–${otherTpl.endTime}`;
+        }
+      }
+
+      // Overnight task that started yesterday and extends into today
+      const isOvernightOther = timeToMins(otherTpl.endTime) < timeToMins(otherTpl.startTime);
+      if (isOvernightOther && (allTaskAssignments[otherTpl.id]?.[prevDk] ?? []).includes(empId)) {
+        const [oStart, oEnd] = taskAbsRange(prevDk, otherTpl);
+        if (oStart < tEnd && oEnd > tStart) {
+          return `${otherTpl.startTime}–${otherTpl.endTime}`;
+        }
+      }
+    }
+    return null;
+  }
+
   // Returns null if not blocked, or "HH:MM" when they become available
   function getBlockedUntil(empId: string): string | null {
     if (!group) return null;
@@ -201,7 +232,8 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
 
   function sortPriority({ emp }: { emp: Employee; status: CellStatus }): number {
     if (getBlockedUntil(emp.id) !== null) return 2;      // rest → bottom
-    if (getOverworkWarning(emp.id) !== '') return 1;     // 8-8 → middle
+    if (getTimeConflict(emp.id) !== null) return 2;      // busy → bottom
+    if (getOverworkWarning(emp.id) !== '') return 1;     // overwork → middle
     return 0;                                            // free → top
   }
 
@@ -224,8 +256,10 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
     const st              = STATUS_STYLE[status as CellStatus];
     const blockedUntil    = isAssignedRow ? null : getBlockedUntil(emp.id);
     const isBlocked       = blockedUntil !== null;
+    const timeConflict    = isAssignedRow ? null : getTimeConflict(emp.id);
+    const isTimeConflict  = timeConflict !== null;
     const isSlotFull      = !isAssignedRow && !!isCertFull;
-    const isDisabled      = isBlocked || isSlotFull;
+    const isDisabled      = isBlocked || isSlotFull || isTimeConflict;
     const owLabel         = isAssignedRow || isDisabled ? '' : getOverworkWarning(emp.id);
     const isOverwork      = owLabel !== '';
     const bgColor         = isDisabled ? '#f8fafc' : isOverwork ? '#fef2f2' : isAssignedRow ? tpl.color + '18' : '#f8fafc';
@@ -241,8 +275,9 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
         <span style={{ fontSize: '12px', fontWeight: isOverwork ? '700' : '500', color: nameColor, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {emp.name.split(' ').slice(0, 2).join(' ')}
         </span>
-        {isBlocked  && <span style={{ fontSize: '10px', fontWeight: '600', color: '#94a3b8', flexShrink: 0, whiteSpace: 'nowrap' }}>rest {blockedUntil}</span>}
-        {isSlotFull && <span style={{ fontSize: '10px', fontWeight: '600', color: '#94a3b8', flexShrink: 0, whiteSpace: 'nowrap' }}>slot full</span>}
+        {isBlocked      && <span style={{ fontSize: '10px', fontWeight: '600', color: '#94a3b8', flexShrink: 0, whiteSpace: 'nowrap' }}>rest {blockedUntil}</span>}
+        {isTimeConflict && <span style={{ fontSize: '10px', fontWeight: '600', color: '#94a3b8', flexShrink: 0, whiteSpace: 'nowrap' }}>busy {timeConflict}</span>}
+        {isSlotFull     && <span style={{ fontSize: '10px', fontWeight: '600', color: '#94a3b8', flexShrink: 0, whiteSpace: 'nowrap' }}>slot full</span>}
         {isOverwork && <span style={{ fontSize: '10px', fontWeight: '700', color: '#dc2626', flexShrink: 0, whiteSpace: 'nowrap' }}>⚠ {owLabel}</span>}
         {isAssignedRow && slotRoles[emp.id] && (
           <span style={{ fontSize: '10px', fontWeight: '700', padding: '1px 7px', borderRadius: '9999px', background: tpl.color + '22', color: tpl.color, border: `1px solid ${tpl.color}44`, flexShrink: 0 }}>
@@ -321,11 +356,11 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
   const [certSourceKey]                   = useFirestore<string>('hmal-cert-source-col', '');
-  const [viewMode, setViewMode]           = useFirestore<ViewMode>('tasks-view-mode', 'day');
+  const [viewMode, setViewMode]           = useLocalStorage<ViewMode>('tasks-view-mode', 'day');
   const [anchor, setAnchor]               = useState<Date>(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
-  const [customFrom, setCustomFrom]       = useFirestore('tasks-custom-from', '');
-  const [customTo, setCustomTo]           = useFirestore('tasks-custom-to', '');
-  const [customApplied, setCustomApplied] = useFirestore<{ from: string; to: string } | null>('tasks-custom-applied', null);
+  const [customFrom, setCustomFrom]       = useLocalStorage('tasks-custom-from', '');
+  const [customTo, setCustomTo]           = useLocalStorage('tasks-custom-to', '');
+  const [customApplied, setCustomApplied] = useLocalStorage<{ from: string; to: string } | null>('tasks-custom-applied', null);
   const [selectedCell, setSelectedCell]   = useState<{ templateId: string; dk: string } | null>(null);
   const [extraDays, setExtraDays]         = useState(2);
   const scrollRef = useRef<HTMLDivElement>(null);
