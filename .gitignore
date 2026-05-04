@@ -2,13 +2,32 @@ node_modules/
 dist/
 .DS_Store
 *.local
+
+# Environment files — never commit real secrets
 .env
+.env.*
+!.env.example
+!.env.*.example
+
+# Firebase CLI artifacts
+.firebase/
+.firebaserc
+firebase-debug.log
+
+# Compiled server output
+server/dist/
 
 # Claude Code / AI system files
 .claude/
 CLAUDE.md
-SECURITY_QA_REPORT.md
+
+# Security and audit reports (contain finding details)
+SECURITY_QA_REPORT*.md
+GITIGNORE_AUDIT_REPORT*.md
 
 # Logs
 *.log
 logs.txt
+
+# Misc
+skills-lock.json

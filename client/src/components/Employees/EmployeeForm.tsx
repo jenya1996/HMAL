@@ -5,12 +5,14 @@ import { apiFetch } from '../../lib/api';
 interface EmployeeFormProps {
   employee?: Employee;
   departments: Department[];
-  customColumns: ColumnDef[];
+  columnDefs: ColumnDef[];
   onSave: (employee: Employee) => void;
   onClose: () => void;
 }
 
-export default function EmployeeForm({ employee, customColumns, onSave, onClose }: EmployeeFormProps) {
+export default function EmployeeForm({ employee, columnDefs, onSave, onClose }: EmployeeFormProps) {
+  const deptCol = columnDefs.find(c => c.key === 'department');
+  const customColumns = columnDefs.filter(c => !c.builtin);
   const [form, setForm] = useState<Omit<Employee, 'id'>>({
     soldierId:    employee?.soldierId ?? '',
     name:         employee?.name ?? '',
@@ -34,22 +36,30 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setAuthError('');
-    console.log('[EmployeeForm] handleSubmit — form data:', form);
+
+    if (!form.name.trim()) {
+      setAuthError('Full Name is required.');
+      return;
+    }
+    if (form.phone && !/^[\d\s+\-(). ]{7,20}$/.test(form.phone.trim())) {
+      setAuthError('Phone number format is invalid.');
+      return;
+    }
 
     if (form.canLogin && !employee?.canLogin) {
       if (!form.email) { setAuthError('Email is required to allow login.'); return; }
-      if (password.length < 6) { setAuthError('Password must be at least 6 characters.'); return; }
+      if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+        setAuthError('Password must be at least 8 characters with an uppercase letter and a number.');
+        return;
+      }
       setSaving(true);
       try {
-        console.log('[EmployeeForm] creating Firebase Auth user for:', form.email);
         await apiFetch('/api/auth/users', {
           method: 'POST',
           body:   JSON.stringify({ email: form.email, password }),
         });
-        console.log('[EmployeeForm] Firebase Auth user created successfully');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error('[EmployeeForm] Firebase Auth user creation failed:', msg);
         if (msg.includes('email-already-in-use')) {
           setAuthError('This email already has a login account.');
         } else {
@@ -60,8 +70,7 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
       }
     }
 
-    const emp = { id: employee?.id ?? `e${Date.now()}`, ...form };
-    console.log('[EmployeeForm] calling onSave with:', emp);
+    const emp = { id: employee?.id ?? crypto.randomUUID(), ...form };
     onSave(emp);
     setSaving(false);
   }
@@ -79,13 +88,14 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
+      onClick={e => e.target === e.currentTarget && onClose()}
+      role="dialog" aria-modal="true" aria-labelledby="form-title">
       <div style={{ background: 'white', borderRadius: '12px', padding: '28px', width: '100%', maxWidth: '480px', maxHeight: '90vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: '600' }}>{employee ? 'Edit Soldier' : 'Add Soldier'}</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>×</button>
+          <h2 id="form-title" style={{ fontSize: '18px', fontWeight: '600' }}>{employee ? 'Edit Soldier' : 'Add Soldier'}</h2>
+          <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>×</button>
         </div>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
             <div>
               <label style={labelStyle}>ID</label>
@@ -96,8 +106,16 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
               <input style={inputStyle} value={form.privateId ?? ''} onChange={e => setForm({ ...form, privateId: e.target.value })} placeholder="ID number" />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
-              <label style={labelStyle}>Full Name</label>
-              <input style={inputStyle} value={form.name} onChange={e => setForm({ ...form, name: e.target.value.replace(/\b\w/g, c => c.toUpperCase()) })} placeholder="John Smith" />
+              <label style={labelStyle}>Full Name <span style={{ color: '#dc2626' }}>*</span></label>
+              <input
+                style={{ ...inputStyle, borderColor: authError && !form.name.trim() ? '#dc2626' : '#e2e8f0' }}
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value.replace(/\b\w/g, c => c.toUpperCase()) })}
+                placeholder="John Smith"
+                required
+                minLength={2}
+                aria-required="true"
+              />
             </div>
             <div>
               <label style={labelStyle}>Email</label>
@@ -105,11 +123,30 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
             </div>
             <div>
               <label style={labelStyle}>Phone Number</label>
-              <input style={inputStyle} value={form.phone ?? ''} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="555-0101" />
+              <input
+                style={inputStyle}
+                type="tel"
+                value={form.phone ?? ''}
+                onChange={e => setForm({ ...form, phone: e.target.value })}
+                placeholder="555-0101"
+                pattern="[\d\s+\-(). ]{7,20}"
+                title="Enter a valid phone number (7–20 digits, spaces, +, -, (, ) allowed)"
+              />
             </div>
             <div>
               <label style={labelStyle}>Role</label>
               <input style={inputStyle} value={form.role ?? ''} onChange={e => setForm({ ...form, role: e.target.value })} placeholder="e.g. Commander" />
+            </div>
+            <div>
+              <label style={labelStyle}>Department</label>
+              {deptCol?.options?.length ? (
+                <select style={inputStyle} value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}>
+                  <option value="">— Select —</option>
+                  {deptCol.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              ) : (
+                <input style={inputStyle} value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} placeholder="Department" />
+              )}
             </div>
             <div>
               <label style={labelStyle}>Status</label>
@@ -120,7 +157,6 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
               </select>
             </div>
 
-            {/* Custom columns */}
             {customColumns.map(col => {
               const val = form.customFields?.[col.key] ?? '';
               const type = col.fieldType ?? 'text';
@@ -174,6 +210,7 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
                 checked={form.canLogin ?? false}
                 disabled={!!employee?.canLogin}
                 onChange={e => setForm({ ...form, canLogin: e.target.checked })}
+                aria-label="Allow system login"
                 style={{ width: '16px', height: '16px', accentColor: '#2563eb', cursor: employee?.canLogin ? 'default' : 'pointer' }}
               />
               <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
@@ -194,12 +231,13 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="Min. 6 characters"
+                    placeholder="Min. 8 chars, uppercase, number"
                     style={{ ...inputStyle, paddingRight: '44px' }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(p => !p)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                     style={{
                       position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
                       background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '13px', padding: '2px 4px',
@@ -212,7 +250,7 @@ export default function EmployeeForm({ employee, customColumns, onSave, onClose 
             )}
 
             {authError && (
-              <div style={{ marginTop: '10px', fontSize: '13px', color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '8px 12px' }}>
+              <div role="alert" style={{ marginTop: '10px', fontSize: '13px', color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '8px 12px' }}>
                 {authError}
               </div>
             )}

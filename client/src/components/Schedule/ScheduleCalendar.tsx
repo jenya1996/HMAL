@@ -1,16 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { useFirestore } from '../../hooks/useFirestore';
-import { Employee } from '../../types';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { Employee, ColumnDef } from '../../types';
+import { getFilterOptions } from '../../lib/employeeFilters';
 
 interface ScheduleCalendarProps {
   employees: Employee[];
   schedule: ScheduleData;
   onUpdate: (schedule: ScheduleData) => void;
+  columnDefs: ColumnDef[];
   search: string;
   onSearchChange: (v: string) => void;
-  filterDept: string;
-  onFilterDeptChange: (v: string) => void;
-  deptOptions: string[];
+  filters: Record<string, string>;
+  onFiltersChange: (f: Record<string, string>) => void;
 }
 
 export type ScheduleData = Record<string, Record<string, CellStatus>>;
@@ -37,29 +39,36 @@ const FULL_DAYS    = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday
 const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_NAMES  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-function dateKey(d: Date): string {
+export function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-function shiftDay(dk: string, n: number): string {
+export function shiftDay(dk: string, n: number): string {
   const d = new Date(dk + 'T12:00:00'); // noon to avoid DST issues
   d.setDate(d.getDate() + n);
   return dateKey(d);
 }
 
-function withTransitions(sched: ScheduleData): ScheduleData {
+export function withTransitions(sched: ScheduleData): ScheduleData {
   const result: ScheduleData = {};
 
   for (const empId of Object.keys(sched)) {
     const empData = sched[empId];
 
-    // Find all H/ABS dates sorted
-    const leaveDays = Object.keys(empData)
-      .filter(dk => empData[dk] === 'home-leave' || empData[dk] === 'absent')
+    // Strip departed/returning and empty — they are always derived, never stored as intent.
+    // This ensures stale OUT/RTN are removed when the surrounding H/ABS changes.
+    const base: Record<string, CellStatus> = {};
+    for (const [dk, status] of Object.entries(empData)) {
+      if (status && status !== 'departed' && status !== 'returning') {
+        base[dk] = status as CellStatus;
+      }
+    }
+
+    const leaveDays = Object.keys(base)
+      .filter(dk => base[dk] === 'home-leave' || base[dk] === 'absent')
       .sort();
 
-    // Start from existing data (preserves manually-set OUT/RTN)
-    const updated: Record<string, CellStatus> = { ...empData };
+    const updated: Record<string, CellStatus> = { ...base };
 
     if (leaveDays.length > 0) {
       const blocks: string[][] = [[leaveDays[0]]];
@@ -72,18 +81,37 @@ function withTransitions(sched: ScheduleData): ScheduleData {
       }
 
       for (const block of blocks) {
+        // si tracks how many days were consumed from the front by an absorbed OUT marker.
+        let si = 0;
+        const ei = block.length - 1;
+
+        // ── OUT: day before the first H/ABS ───────────────────────────────
         const outKey = shiftDay(block[0], -1);
-        const rtnKey = shiftDay(block[block.length - 1], 1);
-        if (empData[outKey] !== 'home-leave' && empData[outKey] !== 'absent') {
+        const outFree = !base[outKey] || base[outKey] === 'home-leave' || base[outKey] === 'absent';
+        if (outFree) {
           updated[outKey] = 'departed';
+        } else if (ei > 0) {
+          // OUT position blocked by explicit value (e.g. B). First H day absorbs the marker,
+          // shrinking the block — matching the pattern: b-b-OUT-h-h → b-b-b-OUT-h
+          updated[block[0]] = 'departed';
+          si = 1;
         }
-        if (empData[rtnKey] !== 'home-leave' && empData[rtnKey] !== 'absent') {
+
+        if (si > ei) continue; // whole block consumed
+
+        // ── RTN: day after the last remaining H/ABS ───────────────────────
+        const rtnKey = shiftDay(block[ei], 1);
+        const rtnFree = !base[rtnKey] || base[rtnKey] === 'home-leave' || base[rtnKey] === 'absent';
+        if (rtnFree) {
           updated[rtnKey] = 'returning';
+        } else if (ei - si > 0) {
+          // RTN position blocked. Last H day absorbs the marker, symmetric to OUT rule.
+          updated[block[ei]] = 'returning';
         }
       }
     }
 
-    result[empId] = updated;
+    if (Object.keys(updated).length > 0) result[empId] = updated;
   }
 
   return result;
@@ -121,18 +149,22 @@ function formatColHeader(d: Date, mode: ViewMode): { top: string; bottom: string
 function rightOf(i: number)  { return (NUM_STATUSES - 1 - i) * SUM_COL_W; }
 function bottomOf(i: number) { return (NUM_STATUSES - 1 - i) * SUM_ROW_H; }
 
-export default function ScheduleCalendar({ employees, schedule, onUpdate, search, onSearchChange, filterDept, onFilterDeptChange, deptOptions }: ScheduleCalendarProps) {
+export default function ScheduleCalendar({ employees, schedule, onUpdate, columnDefs, search, onSearchChange, filters, onFiltersChange }: ScheduleCalendarProps) {
   const today = new Date(); today.setHours(0,0,0,0);
 
-  const [viewMode, setViewMode]         = useFirestore<ViewMode>('schedule-view-mode', 'week');
+  const [viewMode, setViewMode]         = useLocalStorage<ViewMode>('schedule-view-mode', 'week');
   const [anchor, setAnchor]             = useState<Date>(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
-  const [customFrom, setCustomFrom]     = useFirestore('schedule-custom-from', '');
-  const [customTo, setCustomTo]         = useFirestore('schedule-custom-to', '');
-  const [customApplied, setCustomApplied] = useFirestore<{ from: string; to: string } | null>('schedule-custom-applied', null);
+  const [customFrom, setCustomFrom]     = useLocalStorage('schedule-custom-from', '');
+  const [customTo, setCustomTo]         = useLocalStorage('schedule-custom-to', '');
+  const [customApplied, setCustomApplied] = useLocalStorage<{ from: string; to: string } | null>('schedule-custom-applied', null);
   const [legend, setLegend]             = useState(true);
+  const [autoTransitions, setAutoTransitions] = useFirestore<boolean>('schedule-auto-transitions', true);
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const isDragging  = useRef(false);
   const dragMode    = useRef<'add' | 'remove'>('add');
+  const [addingFilter, setAddingFilter] = useState(false);
+  const [pendingCol, setPendingCol]     = useState('');
+  const [pendingVal, setPendingVal]     = useState('');
 
   useEffect(() => {
     const stop = () => { isDragging.current = false; };
@@ -142,6 +174,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
 
   // Backfill transitions on any existing schedule data (e.g. loaded from localStorage)
   useEffect(() => {
+    if (!autoTransitions) return;
     if (Object.keys(schedule).length === 0) return;
     const next = withTransitions(schedule);
     if (JSON.stringify(next) !== JSON.stringify(schedule)) onUpdate(next);
@@ -183,7 +216,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
       const [empId, key] = id.split('|');
       updated = { ...updated, [empId]: { ...(updated[empId] ?? {}), [key]: status } };
     });
-    onUpdate(withTransitions(updated));
+    onUpdate(autoTransitions ? withTransitions(updated) : updated);
     setSelectedCells(new Set());
   }
 
@@ -278,33 +311,86 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
           ))}
         </div>
 
+        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', color: '#475569', userSelect: 'none' }}>
+          <input type="checkbox" checked={autoTransitions} onChange={e => setAutoTransitions(e.target.checked)} style={{ cursor: 'pointer', width: '15px', height: '15px' }} />
+          Auto OUT/RTN
+        </label>
+
         <button onClick={() => setLegend(l => !l)} style={{ padding: '5px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', fontSize: '13px', cursor: 'pointer', color: '#475569' }}>
           {legend ? 'Hide' : 'Show'} Legend
         </button>
       </div>
 
       {/* Row 2: Soldier filter */}
-      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexShrink: 0 }}>
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
         <input
-          placeholder="🔍 Filter soldiers..."
+          placeholder="🔍 Search soldiers..."
           value={search}
           onChange={e => onSearchChange(e.target.value)}
-          style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px', minWidth: '200px', flex: 1 }}
+          style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px', minWidth: '180px', flex: 1 }}
         />
-        {deptOptions.length > 0 && (
-          <select value={filterDept} onChange={e => onFilterDeptChange(e.target.value)}
-            style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px', background: 'white', cursor: 'pointer', color: filterDept ? '#1e293b' : '#94a3b8' }}>
-            <option value="">All departments</option>
-            {deptOptions.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-        )}
-        {(search || filterDept) && (
-          <button
-            onClick={() => { onSearchChange(''); onFilterDeptChange(''); }}
-            style={{ padding: '7px 14px', border: '1px solid #fca5a5', borderRadius: '6px', background: '#fee2e2', color: '#dc2626', fontSize: '13px', fontWeight: '500', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            Clear filters
+
+        {/* Active filter chips */}
+        {Object.entries(filters).map(([key, val]) => {
+          const col = columnDefs.find(c => c.key === key);
+          return (
+            <span key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '9999px', fontSize: '13px', color: '#1d4ed8', whiteSpace: 'nowrap' }}>
+              {col?.label ?? key}: <strong>{val}</strong>
+              <button onClick={() => { const n = { ...filters }; delete n[key]; onFiltersChange(n); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#93c5fd', fontSize: '15px', lineHeight: 1, padding: '0 0 0 2px' }} aria-label={`Remove ${col?.label} filter`}>×</button>
+            </span>
+          );
+        })}
+
+        {/* Add filter */}
+        {addingFilter ? (
+          <>
+            <select value={pendingCol} onChange={e => { setPendingCol(e.target.value); setPendingVal(''); }}
+              style={{ padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', background: 'white' }}>
+              <option value="">Column…</option>
+              {columnDefs.filter(c => c.visible && !filters[c.key]).map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+            {pendingCol && (() => {
+              const col = columnDefs.find(c => c.key === pendingCol);
+              const opts = col ? getFilterOptions(col) : [];
+              return opts.length > 0
+                ? (
+                  <select value={pendingVal} onChange={e => setPendingVal(e.target.value)}
+                    style={{ padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', background: 'white' }}>
+                    <option value="">Value…</option>
+                    {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                ) : (
+                  <input value={pendingVal} onChange={e => setPendingVal(e.target.value)}
+                    placeholder="Value…" autoFocus
+                    style={{ padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', width: '130px' }} />
+                );
+            })()}
+            <button
+              disabled={!pendingCol || !pendingVal}
+              onClick={() => { onFiltersChange({ ...filters, [pendingCol]: pendingVal }); setPendingCol(''); setPendingVal(''); setAddingFilter(false); }}
+              style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: (!pendingCol || !pendingVal) ? '#e2e8f0' : '#2563eb', color: (!pendingCol || !pendingVal) ? '#94a3b8' : 'white', fontSize: '13px', fontWeight: '600', cursor: (!pendingCol || !pendingVal) ? 'default' : 'pointer' }}>
+              Add
+            </button>
+            <button onClick={() => { setAddingFilter(false); setPendingCol(''); setPendingVal(''); }}
+              style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', background: 'white', fontSize: '13px', cursor: 'pointer', color: '#64748b' }}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button onClick={() => setAddingFilter(true)}
+            style={{ padding: '6px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', fontSize: '13px', cursor: 'pointer', color: '#64748b', whiteSpace: 'nowrap' }}>
+            + Filter
           </button>
         )}
+
+        {(search || Object.keys(filters).length > 0) && (
+          <button onClick={() => { onSearchChange(''); onFiltersChange({}); }}
+            style={{ padding: '6px 12px', border: '1px solid #fca5a5', borderRadius: '6px', background: '#fee2e2', color: '#dc2626', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Clear
+          </button>
+        )}
+
         <span style={{ fontSize: '13px', color: '#64748b', whiteSpace: 'nowrap' }}>
           {activeEmployees.length} soldier{activeEmployees.length !== 1 ? 's' : ''}
         </span>
@@ -395,7 +481,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
             <thead>
               <tr style={{ background: '#f8fafc' }}>
                 {/* Top-left corner */}
-                <th style={{ ...stickyCorner, minWidth: '160px', padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#374151', background: '#f8fafc', borderRight: '2px solid #e2e8f0' }}>
+                <th style={{ ...stickyCorner, minWidth: '160px', padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#374151', background: '#f8fafc', borderRight: '2px solid #475569', borderBottom: '2px solid #475569' }}>
                   Soldier
                 </th>
 
@@ -412,6 +498,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
                       borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined,
                       background: todayCol ? '#eff6ff' : weekend ? '#fdf4ff' : '#f8fafc',
                       borderTop: todayCol ? '2px solid #2563eb' : weekend ? '2px solid #e9d5ff' : undefined,
+                      borderBottom: '2px solid #475569',
                     }}>
                       <div style={{ padding: '6px 4px' }}>
                         <div style={{ color: weekend ? '#7c3aed' : todayCol ? '#2563eb' : '#374151', fontWeight: todayCol || weekend ? '700' : '600' }}>{top}</div>
@@ -429,8 +516,9 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
                       position: 'sticky', top: 0, right: rightOf(i), zIndex: 3,
                       width: SUM_COL_W, minWidth: SUM_COL_W, padding: '4px 2px',
                       background: '#f1f5f9',
-                      borderLeft: i === 0 ? '2px solid #cbd5e1' : undefined,
+                      borderLeft: i === 0 ? '2px solid #475569' : undefined,
                       borderRight: '1px solid #e2e8f0',
+                      borderBottom: '2px solid #475569',
                       textAlign: 'center',
                     }}>
                       <div style={{ width: '24px', height: '24px', borderRadius: '4px', margin: '0 auto', background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '10px' }}>
@@ -448,7 +536,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
                 return (
                   <tr key={emp.id} style={{ background: rowBg }}>
                     {/* Sticky left: name */}
-                    <td style={{ ...stickyLeft, padding: '8px 16px', fontSize: '13px', fontWeight: '500', color: '#1e293b', whiteSpace: 'nowrap', background: rowBg, borderRight: '2px solid #e2e8f0' }}>
+                    <td style={{ ...stickyLeft, padding: '8px 16px', fontSize: '13px', fontWeight: '500', color: '#1e293b', whiteSpace: 'nowrap', background: rowBg, borderRight: '2px solid #475569' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <div style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0, background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', color: '#2563eb', fontSize: '11px' }}>
                           {emp.name.split(' ').map(n => n[0]).join('')}
@@ -497,7 +585,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
                       const count = viewDates.filter(d => getStatus(emp.id, d) === statusKey).length;
                       const sumBg = rowIdx % 2 === 0 ? '#f8fafc' : '#f1f5f9';
                       return (
-                        <td key={`sr-${statusKey}`} style={{ position: 'sticky', right: rightOf(i), width: SUM_COL_W, minWidth: SUM_COL_W, padding: '6px 2px', textAlign: 'center', fontSize: '12px', fontWeight: '700', background: sumBg, borderLeft: i === 0 ? '2px solid #cbd5e1' : undefined, borderRight: '1px solid #e2e8f0' }}>
+                        <td key={`sr-${statusKey}`} style={{ position: 'sticky', right: rightOf(i), width: SUM_COL_W, minWidth: SUM_COL_W, padding: '6px 2px', textAlign: 'center', fontSize: '12px', fontWeight: '700', background: sumBg, borderLeft: i === 0 ? '2px solid #475569' : undefined, borderRight: '1px solid #e2e8f0' }}>
                           {count > 0
                             ? <span style={{ display: 'inline-block', background: cfg.bg, color: cfg.color, borderRadius: '4px', padding: '1px 5px', fontWeight: '700', fontSize: '11px' }}>{count}</span>
                             : <span style={{ color: '#d1d5db' }}>·</span>}
@@ -517,7 +605,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
                 return (
                   <tr key={statusKey}>
                     {/* Bottom-left: label */}
-                    <td style={{ ...tdBase, left: 0, zIndex: 3, padding: '0 16px', whiteSpace: 'nowrap', borderRight: '2px solid #e2e8f0', borderTop: i === 0 ? '2px solid #e2e8f0' : undefined }}>
+                    <td style={{ ...tdBase, left: 0, zIndex: 3, padding: '0 16px', whiteSpace: 'nowrap', borderRight: '2px solid #475569', borderTop: i === 0 ? '2px solid #475569' : undefined }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <div style={{ width: '20px', height: '20px', borderRadius: '4px', flexShrink: 0, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '10px' }}>
                           {cfg.label}
@@ -531,7 +619,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
                       const count    = activeEmployees.filter(emp => getStatus(emp.id, d) === statusKey).length;
                       const todayCol = isToday(d);
                       return (
-                        <td key={dateKey(d)} style={{ ...tdBase, zIndex: 1, padding: '0 2px', textAlign: 'center', background: todayCol ? '#f0f7ff' : isWeekend(d) ? '#faf5ff' : '#f8fafc', borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #f1f5f9', borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined, borderTop: i === 0 ? '2px solid #e2e8f0' : undefined }}>
+                        <td key={dateKey(d)} style={{ ...tdBase, zIndex: 1, padding: '0 2px', textAlign: 'center', background: todayCol ? '#f0f7ff' : isWeekend(d) ? '#faf5ff' : '#f8fafc', borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #f1f5f9', borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined, borderTop: i === 0 ? '2px solid #475569' : undefined }}>
                           {count > 0
                             ? <span style={{ display: 'inline-block', background: cfg.bg, color: cfg.color, borderRadius: '4px', padding: '1px 5px', fontWeight: '700', fontSize: '11px' }}>{count}</span>
                             : <span style={{ color: '#d1d5db' }}>·</span>}
@@ -541,7 +629,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, search
 
                     {/* Bottom-right corners */}
                     {STATUSES.map((k, j) => (
-                      <td key={`bc-${k}`} style={{ ...tdBase, position: 'sticky', bottom, right: rightOf(j), zIndex: 2, borderLeft: j === 0 ? '2px solid #cbd5e1' : undefined, borderTop: i === 0 ? '2px solid #e2e8f0' : undefined, background: '#eef2f7' }} />
+                      <td key={`bc-${k}`} style={{ ...tdBase, position: 'sticky', bottom, right: rightOf(j), zIndex: 2, borderLeft: j === 0 ? '2px solid #475569' : undefined, borderTop: i === 0 ? '2px solid #475569' : undefined, background: '#eef2f7' }} />
                     ))}
                   </tr>
                 );

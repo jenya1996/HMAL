@@ -55,8 +55,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Email</label>
+            <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Email</label>
             <input
+              id="login-email"
               type="email" value={email} onChange={e => setEmail(e.target.value)}
               placeholder="you@example.com" required
               style={{ padding: '10px 14px', borderRadius: '8px', border: '1.5px solid #e2e8f0', fontSize: '14px', outline: 'none' }}
@@ -66,8 +67,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Password</label>
+            <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Password</label>
             <input
+              id="login-password"
               type="password" value={password} onChange={e => setPassword(e.target.value)}
               placeholder="••••••••" required
               style={{ padding: '10px 14px', borderRadius: '8px', border: '1.5px solid #e2e8f0', fontSize: '14px', outline: 'none' }}

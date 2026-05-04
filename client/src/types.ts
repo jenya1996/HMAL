@@ -70,6 +70,31 @@ export type TaskAssignments = Record<string, Record<string, string[]>>;
 // [templateId][dateKey][empId] = cert they were assigned under ('' = Other Soldiers)
 export type TaskRoles = Record<string, Record<string, Record<string, string>>>;
 
+// ── Audit Logging ────────────────────────────────────────────────────────────
+
+export type AuditCategory = 'auth' | 'employees' | 'schedule' | 'tasks' | 'settings';
+
+export interface FieldChange {
+  field:  string;
+  before: unknown;
+  after:  unknown;
+}
+
+export interface AuditLogEntry {
+  id:          string;
+  timestamp:   string;
+  userId:      string;
+  userEmail:   string;
+  action:      string;
+  category:    AuditCategory;
+  description: string;
+  details?: Record<string, unknown>;
+  meta: {
+    ip:        string;
+    userAgent: string;
+  };
+}
+
 export const DEFAULT_COLUMNS: ColumnDef[] = [
   { key: 'id',         label: 'ID',         visible: true, builtin: true },
   { key: 'name',       label: 'Name',       visible: true, builtin: true },

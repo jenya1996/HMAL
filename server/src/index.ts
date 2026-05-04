@@ -2,8 +2,10 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import authRouter from './routes/auth';
 import dataRouter from './routes/data';
+import logsRouter from './routes/logs';
 import { logger } from './lib/logger';
 
 const app = express();
@@ -15,23 +17,41 @@ const corsOptions = {
 
 app.options('*', cors(corsOptions));
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      objectSrc:  ["'none'"],
+      baseUri:    ["'self'"],
+    },
+  },
+}));
+app.set('trust proxy', 1);
+app.use(express.json({ limit: '512kb' }));
 app.use(cookieParser());
 
-// Log every incoming request
+// Log every incoming request — password field is redacted
 app.use((req, _res, next) => {
-  const hasCookie = !!req.cookies?.session;
-  const bodyPreview = req.body && Object.keys(req.body).length
-    ? JSON.stringify(req.body).slice(0, 120)
-    : '(no body)';
-  logger.log(`\n→ [${req.method}] ${req.path}`);
-  logger.log(`   cookie: ${hasCookie ? 'present ✓' : 'MISSING ✗'}`);
-  if (req.method !== 'GET') logger.log(`   body: ${bodyPreview}`);
+  const hasCookie = !!req.cookies?.__session;
+  if (req.method !== 'GET') {
+    const safe = req.body && typeof req.body === 'object'
+      ? JSON.stringify({ ...req.body, password: req.body.password ? '[REDACTED]' : undefined }).slice(0, 200)
+      : '(no body)';
+    logger.log(`\n→ [${req.method}] ${req.path}  cookie:${hasCookie ? '✓' : '✗'}  body:${safe}`);
+  } else {
+    logger.log(`\n→ [${req.method}] ${req.path}  cookie:${hasCookie ? '✓' : '✗'}`);
+  }
   next();
 });
 
+app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+
 app.use('/api/auth', authRouter);
 app.use('/api/data', dataRouter);
+app.use('/api/logs', logsRouter);
 
 const PORT = process.env.PORT ?? 3001;
 app.listen(PORT, () => logger.log(`Server running on http://localhost:${PORT}`));

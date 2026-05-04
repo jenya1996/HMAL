@@ -14,6 +14,8 @@ interface SettingsProps {
   onUpdateTaskTemplates: (t: TaskTemplate[]) => void;
   taskGroups: TaskGroup[];
   onUpdateTaskGroups: (g: TaskGroup[]) => void;
+  employees: import('../../types').Employee[];
+  onUpdateEmployees: (e: import('../../types').Employee[]) => void;
 }
 
 const FIELD_TYPE_LABELS: Record<FieldType, string> = {
@@ -23,7 +25,7 @@ const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   multiselect: 'Multi-select',
 };
 
-export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, onUpdateTaskTemplates, taskGroups, onUpdateTaskGroups }: SettingsProps) {
+export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, onUpdateTaskTemplates, taskGroups, onUpdateTaskGroups, employees, onUpdateEmployees }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<'soldiers' | 'tasks'>('soldiers');
   const [newColLabel, setNewColLabel] = useState('');
   const [newColType, setNewColType] = useState<FieldType>('text');
@@ -53,7 +55,7 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   function addGroup() {
     const name = newGroupName.trim();
     if (!name) return;
-    onUpdateTaskGroups([...taskGroups, { id: `grp_${Date.now()}`, name, intervalHours: newGroupInterval, alertHours: newGroupAlert }]);
+    onUpdateTaskGroups([...taskGroups, { id: `grp_${crypto.randomUUID()}`, name, intervalHours: newGroupInterval, alertHours: newGroupAlert }]);
     setNewGroupName('');
     setNewGroupInterval(8);
     setNewGroupAlert(16);
@@ -74,7 +76,7 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
       ));
       setEditingTpl(null);
     } else {
-      onUpdateTaskTemplates([...taskTemplates, { id: `tpl_${Date.now()}`, name, startTime: tplStart, endTime: tplEnd, requiredSoldiers: tplSoldiers, color: tplColor, certifications: tplCerts, certLimits, groupId: tplGroupId || undefined }]);
+      onUpdateTaskTemplates([...taskTemplates, { id: `tpl_${crypto.randomUUID()}`, name, startTime: tplStart, endTime: tplEnd, requiredSoldiers: tplSoldiers, color: tplColor, certifications: tplCerts, certLimits, groupId: tplGroupId || undefined }]);
     }
     resetTplForm();
   }
@@ -130,12 +132,22 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   function deleteColumn(key: string) {
     onUpdateColumns(columnDefs.filter(c => c.key !== key));
     if (expandedKey === key) setExpandedKey(null);
+    // Cascade: remove the orphaned customField key from all soldier records
+    const needsCleanup = employees.some(e => key in (e.customFields ?? {}));
+    if (needsCleanup) {
+      onUpdateEmployees(employees.map(e => {
+        if (!(key in (e.customFields ?? {}))) return e;
+        const cf = { ...e.customFields };
+        delete cf[key];
+        return { ...e, customFields: cf };
+      }));
+    }
   }
 
   function addColumn() {
     const label = newColLabel.trim();
     if (!label) return;
-    const key = `custom_${Date.now()}`;
+    const key = `custom_${crypto.randomUUID().replace(/-/g, '')}`;
     onUpdateColumns([...columnDefs, { key, label, visible: true, builtin: false, fieldType: newColType, options: [] }]);
     setNewColLabel('');
     setNewColType('text');
@@ -161,6 +173,7 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   function updateOptionColor(key: string, opt: string, color: string) {
     const col = columnDefs.find(c => c.key === key);
     if (!col) return;
+    if (!/^#[0-9A-Fa-f]{3,8}$/.test(color)) return;
     updateCol(key, { optionColors: { ...col.optionColors, [opt]: color } });
   }
 
@@ -198,7 +211,12 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px', background: 'white', borderRadius: '0 0 12px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        overflowY: 'auto',
+        padding: '24px',
+        background: 'white', borderRadius: '0 0 12px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+      }}>
 
       {activeTab === 'soldiers' && (
       <div style={{ maxWidth: '600px' }}>

@@ -5,10 +5,14 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ employees }: DashboardProps) {
-  const activeEmployees = employees.filter(e => e.status === 'Active').length;
+  const activeEmployees     = employees.filter(e => e.status === 'Active').length;
   const annexationEmployees = employees.filter(e => e.status === 'Annexation').length;
-  const inactiveEmployees = employees.filter(e => e.status === 'Inactive').length;
-  const recentEmployees = [...employees].sort((a, b) => b.startDate.localeCompare(a.startDate)).slice(0, 5);
+  const inactiveEmployees   = employees.filter(e => e.status === 'Inactive').length;
+
+  const recentEmployees = [...employees]
+    .filter(e => !!e.startDate)
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))
+    .slice(0, 5);
 
   const stats = [
     { label: 'Total Soldiers', value: employees.length, sub: `${activeEmployees} active · ${annexationEmployees} annexation · ${inactiveEmployees} inactive`, color: '#2563eb', icon: '👥' },
@@ -31,7 +35,7 @@ export default function Dashboard({ employees }: DashboardProps) {
                 <div style={{ fontSize: '32px', fontWeight: '700', color: stat.color }}>{stat.value}</div>
                 <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>{stat.sub}</div>
               </div>
-              <div style={{ fontSize: '28px' }}>{stat.icon}</div>
+              <div style={{ fontSize: '28px' }} aria-hidden="true">{stat.icon}</div>
             </div>
           </div>
         ))}
@@ -40,7 +44,7 @@ export default function Dashboard({ employees }: DashboardProps) {
       <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', maxWidth: '480px' }}>
         <h2 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px', color: '#1e293b' }}>Recent Soldiers</h2>
         {recentEmployees.length === 0 ? (
-          <p style={{ color: '#94a3b8', fontSize: '14px' }}>No soldiers yet.</p>
+          <p style={{ color: '#94a3b8', fontSize: '14px' }}>No soldiers with a start date yet.</p>
         ) : (
           <div>
             {recentEmployees.map(emp => (
@@ -63,8 +67,8 @@ export default function Dashboard({ employees }: DashboardProps) {
                   color: '#2563eb',
                   fontSize: '14px',
                   flexShrink: 0,
-                }}>
-                  {emp.name.split(' ').map(n => n[0]).join('')}
+                }} aria-hidden="true">
+                  {emp.name ? emp.name.split(' ').map(n => n[0]).join('') : '?'}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: '500', fontSize: '14px', color: '#1e293b' }}>{emp.name}</div>

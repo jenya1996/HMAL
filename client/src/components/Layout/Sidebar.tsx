@@ -1,10 +1,11 @@
 import { useState } from 'react';
 
-type Page = 'dashboard' | 'employees' | 'schedule' | 'tasks' | 'settings';
+type Page = 'dashboard' | 'employees' | 'schedule' | 'tasks' | 'admin' | 'settings';
 
 interface SidebarProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
+  isAdmin: boolean;
 }
 
 const navItems: { page: Page; label: string; icon: string }[] = [
@@ -20,10 +21,12 @@ function NavButton({ item, currentPage, collapsed, onNavigate }: {
   collapsed: boolean;
   onNavigate: (page: Page) => void;
 }) {
+  const active = currentPage === item.page;
   return (
     <button
       onClick={() => onNavigate(item.page)}
       title={collapsed ? item.label : undefined}
+      aria-current={active ? 'page' : undefined}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -33,10 +36,10 @@ function NavButton({ item, currentPage, collapsed, onNavigate }: {
         padding: collapsed ? '10px 0' : '10px 12px',
         border: 'none',
         borderRadius: '8px',
-        background: currentPage === item.page ? '#2563eb' : 'transparent',
-        color: currentPage === item.page ? 'white' : '#475569',
+        background: active ? '#2563eb' : 'transparent',
+        color: active ? 'white' : '#475569',
         fontSize: '14px',
-        fontWeight: currentPage === item.page ? '600' : '400',
+        fontWeight: active ? '600' : '400',
         cursor: 'pointer',
         marginBottom: '4px',
         textAlign: 'left',
@@ -45,27 +48,30 @@ function NavButton({ item, currentPage, collapsed, onNavigate }: {
         overflow: 'hidden',
       }}
     >
-      <span style={{ fontSize: '18px', flexShrink: 0 }}>{item.icon}</span>
+      <span style={{ fontSize: '18px', flexShrink: 0 }} aria-hidden="true">{item.icon}</span>
       {!collapsed && item.label}
     </button>
   );
 }
 
-export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
+export default function Sidebar({ currentPage, onNavigate, isAdmin }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <aside style={{
-      width: collapsed ? '60px' : '240px',
-      background: '#f1f5f9',
-      borderRight: '1px solid #e2e8f0',
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '0',
-      transition: 'width 0.2s ease',
-      overflow: 'hidden',
-      flexShrink: 0,
-    }}>
+    <aside
+      aria-label="Main navigation"
+      style={{
+        width: collapsed ? '60px' : '240px',
+        background: '#f1f5f9',
+        borderRight: '1px solid #e2e8f0',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '0',
+        transition: 'width 0.2s ease',
+        overflow: 'hidden',
+        flexShrink: 0,
+      }}
+    >
       {/* Header */}
       <div style={{
         padding: '20px 16px',
@@ -81,12 +87,13 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
         {!collapsed && (
           <div>
             <div style={{ fontSize: '20px', fontWeight: '700', whiteSpace: 'nowrap' }}>🏛️ HMAL</div>
-            <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px', whiteSpace: 'nowrap' }}></div>
+            <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px', whiteSpace: 'nowrap' }}>Soldier Management</div>
           </div>
         )}
         <button
           onClick={() => setCollapsed(c => !c)}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           style={{
             background: 'rgba(255,255,255,0.2)',
             border: 'none',
@@ -110,8 +117,16 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Bottom: Settings */}
+      {/* Bottom: Admin + Settings */}
       <div style={{ padding: '8px', borderTop: '1px solid #e2e8f0' }}>
+        {isAdmin && (
+          <NavButton
+            item={{ page: 'admin', label: 'Admin', icon: '🛡️' }}
+            currentPage={currentPage}
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
+        )}
         <NavButton
           item={{ page: 'settings', label: 'Settings', icon: '⚙️' }}
           currentPage={currentPage}
@@ -120,7 +135,7 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
         />
         {!collapsed && (
           <div style={{ padding: '8px 12px 4px', fontSize: '11px', color: '#94a3b8' }}>
-            © 2024 HR Management
+            © 2025 HMAL
           </div>
         )}
       </div>
