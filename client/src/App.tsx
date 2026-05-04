@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { apiFetch } from './lib/api';
 import LoginPage from './components/Auth/LoginPage';
 import { Employee, ColumnDef, DEFAULT_COLUMNS, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup } from './types';
@@ -129,15 +129,15 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
     };
   }, []);
 
-  const filteredEmployees = employees.filter(e => {
+  const filteredEmployees = useMemo(() => employees.filter(e => {
     const q = soldierSearch.toLowerCase();
     const matchSearch = !q ||
       e.name.toLowerCase().includes(q) ||
       (e.email ?? '').toLowerCase().includes(q);
     return matchSearch && matchesFilters(e, soldierFilters, columnDefs);
-  });
+  }), [employees, soldierSearch, soldierFilters, columnDefs]);
 
-  function handleDeleteSoldiers(ids: string[]) {
+  const handleDeleteSoldiers = useCallback((ids: string[]) => {
     const idsSet = new Set(ids);
     setEmployees(employees.filter(e => !idsSet.has(e.id)));
 
@@ -173,7 +173,7 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
       ])
     ) as TaskRoles;
     setTaskRoles(newRoles);
-  }
+  }, [employees, schedule, taskAssignments, taskRoles, setEmployees, setSchedule, setTaskAssignments, setTaskRoles]);
 
   const pageTitles: Record<Page, string> = {
     dashboard: 'Dashboard',

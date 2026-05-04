@@ -41,7 +41,7 @@ export function useFirestore<T>(key: string, initialValue: T) {
     }
 
     sync(); // immediate on mount
-    const interval = setInterval(sync, 3000); // poll every 3 s
+    const interval = setInterval(sync, 10000); // poll every 10 s
     return () => { cancelled = true; clearInterval(interval); };
   }, [key]);
 

@@ -160,9 +160,29 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
   const [legend, setLegend]             = useState(true);
   const [autoTransitions, setAutoTransitions] = useFirestore<boolean>('schedule-auto-transitions', true);
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
-  const [hoveredCell, setHoveredCell]     = useState<{ empId: string; dk: string } | null>(null);
-  const isDragging  = useRef(false);
-  const dragMode    = useRef<'add' | 'remove'>('add');
+  const isDragging    = useRef(false);
+  const dragMode      = useRef<'add' | 'remove'>('add');
+  const hoverStyleRef = useRef<HTMLStyleElement | null>(null);
+
+  useEffect(() => {
+    const el = document.createElement('style');
+    document.head.appendChild(el);
+    hoverStyleRef.current = el;
+    return () => { el.remove(); };
+  }, []);
+
+  function handleHoverEnter(empId: string, dk: string) {
+    if (!hoverStyleRef.current) return;
+    hoverStyleRef.current.textContent = `
+      tr[data-emp="${empId}"] td { background-color: #eef5ff !important; }
+      [data-dk="${dk}"] { background-color: #eef5ff !important; }
+      tr[data-emp="${empId}"] [data-dk="${dk}"] { background-color: #e0eeff !important; }
+    `;
+  }
+
+  function handleHoverLeave() {
+    if (hoverStyleRef.current) hoverStyleRef.current.textContent = '';
+  }
   const [addingFilter, setAddingFilter] = useState(false);
   const [pendingCol, setPendingCol]     = useState('');
   const [pendingVal, setPendingVal]     = useState('');
@@ -491,14 +511,14 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
                   const { top, bottom } = formatColHeader(d, viewMode);
                   const weekend  = isWeekend(d);
                   const todayCol = isToday(d);
-                  const isHovCol = hoveredCell?.dk === dateKey(d);
+                  const thDk = dateKey(d);
                   return (
-                    <th key={dateKey(d)} style={{
+                    <th key={thDk} data-dk={thDk} style={{
                       ...stickyTop,
                       padding: 0, fontSize: '11px', fontWeight: '600', textAlign: 'center',
                       borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #e2e8f0', minWidth: colMinWidth,
                       borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined,
-                      background: isHovCol ? '#e0eeff' : todayCol ? '#eff6ff' : weekend ? '#fdf4ff' : '#f8fafc',
+                      background: todayCol ? '#eff6ff' : weekend ? '#fdf4ff' : '#f8fafc',
                       borderTop: todayCol ? '2px solid #2563eb' : weekend ? '2px solid #e9d5ff' : '2px solid #475569',
                       borderBottom: '2px solid #475569',
                     }}>
@@ -537,9 +557,9 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
               {activeEmployees.map((emp, rowIdx) => {
                 const rowBg = rowIdx % 2 === 0 ? 'white' : '#fafafa';
                 return (
-                  <tr key={emp.id} style={{ background: rowBg }}>
+                  <tr key={emp.id} data-emp={emp.id} style={{ background: rowBg }}>
                     {/* Sticky left: name */}
-                    <td style={{ ...stickyLeft, padding: '8px 16px', fontSize: '13px', fontWeight: '500', color: '#1e293b', whiteSpace: 'nowrap', background: hoveredCell?.empId === emp.id ? '#eef5ff' : rowBg, borderLeft: '2px solid #475569', borderRight: '2px solid #475569' }}>
+                    <td style={{ ...stickyLeft, padding: '8px 16px', fontSize: '13px', fontWeight: '500', color: '#1e293b', whiteSpace: 'nowrap', background: rowBg, borderLeft: '2px solid #475569', borderRight: '2px solid #475569' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <div style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0, background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', color: '#2563eb', fontSize: '11px' }}>
                           {emp.name.split(' ').map(n => n[0]).join('')}
@@ -556,20 +576,18 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
                       const weekend  = isWeekend(d);
                       const isSelected = selectedCells.has(cellId(emp.id, d));
                       const dk = dateKey(d);
-                      const isHovRow = hoveredCell?.empId === emp.id;
-                      const isHovCol = hoveredCell?.dk === dk;
                       return (
-                        <td key={dk}
+                        <td key={dk} data-dk={dk}
                           onMouseDown={e => { e.preventDefault(); handleCellMouseDown(emp.id, d); }}
-                          onMouseEnter={() => { handleCellMouseEnter(emp.id, d); setHoveredCell({ empId: emp.id, dk }); }}
-                          onMouseLeave={() => setHoveredCell(null)}
+                          onMouseEnter={() => { handleCellMouseEnter(emp.id, d); handleHoverEnter(emp.id, dk); }}
+                          onMouseLeave={handleHoverLeave}
                           title={status ? cfg.fullLabel : 'Click or drag to select'}
                           style={{
                             padding: '4px', textAlign: 'center',
                             borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #f1f5f9',
                             borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined,
                             minWidth: colMinWidth,
-                            background: isSelected ? '#dbeafe' : (isHovRow && isHovCol) ? '#e0eeff' : (isHovRow || isHovCol) ? '#eef5ff' : todayCol ? '#f0f7ff' : weekend ? '#faf5ff' : undefined,
+                            background: isSelected ? '#dbeafe' : todayCol ? '#f0f7ff' : weekend ? '#faf5ff' : undefined,
                             cursor: 'pointer',
                             outline: isSelected ? '2px solid #2563eb' : undefined,
                             outlineOffset: '-2px',
@@ -592,7 +610,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
                       const count = viewDates.filter(d => getStatus(emp.id, d) === statusKey).length;
                       const sumBg = rowIdx % 2 === 0 ? '#f8fafc' : '#f1f5f9';
                       return (
-                        <td key={`sr-${statusKey}`} style={{ position: 'sticky', right: rightOf(i), width: SUM_COL_W, minWidth: SUM_COL_W, padding: '6px 2px', textAlign: 'center', fontSize: '12px', fontWeight: '700', background: hoveredCell?.empId === emp.id ? '#eef5ff' : sumBg, borderLeft: i === 0 ? '2px solid #475569' : undefined, borderRight: i === NUM_STATUSES - 1 ? '2px solid #475569' : '1px solid #e2e8f0' }}>
+                        <td key={`sr-${statusKey}`} style={{ position: 'sticky', right: rightOf(i), width: SUM_COL_W, minWidth: SUM_COL_W, padding: '6px 2px', textAlign: 'center', fontSize: '12px', fontWeight: '700', background: sumBg, borderLeft: i === 0 ? '2px solid #475569' : undefined, borderRight: i === NUM_STATUSES - 1 ? '2px solid #475569' : '1px solid #e2e8f0' }}>
                           {count > 0
                             ? <span style={{ display: 'inline-block', background: cfg.bg, color: cfg.color, borderRadius: '4px', padding: '1px 5px', fontWeight: '700', fontSize: '11px' }}>{count}</span>
                             : <span style={{ color: '#d1d5db' }}>·</span>}
@@ -625,9 +643,9 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
                     {viewDates.map(d => {
                       const count    = activeEmployees.filter(emp => getStatus(emp.id, d) === statusKey).length;
                       const todayCol = isToday(d);
-                      const isHovCol = hoveredCell?.dk === dateKey(d);
+                      const footDk   = dateKey(d);
                       return (
-                        <td key={dateKey(d)} style={{ ...tdBase, zIndex: 1, padding: '0 2px', textAlign: 'center', background: isHovCol ? '#e0eeff' : todayCol ? '#f0f7ff' : isWeekend(d) ? '#faf5ff' : '#f8fafc', borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #f1f5f9', borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined, borderTop: i === 0 ? '2px solid #475569' : undefined, borderBottom: i === NUM_STATUSES - 1 ? '2px solid #475569' : undefined }}>
+                        <td key={footDk} data-dk={footDk} style={{ ...tdBase, zIndex: 1, padding: '0 2px', textAlign: 'center', background: todayCol ? '#f0f7ff' : isWeekend(d) ? '#faf5ff' : '#f8fafc', borderRight: isSaturday(d) ? '2px solid #a78bfa' : '1px solid #f1f5f9', borderLeft: isFriday(d) ? '2px solid #a78bfa' : undefined, borderTop: i === 0 ? '2px solid #475569' : undefined, borderBottom: i === NUM_STATUSES - 1 ? '2px solid #475569' : undefined }}>
                           {count > 0
                             ? <span style={{ display: 'inline-block', background: cfg.bg, color: cfg.color, borderRadius: '4px', padding: '1px 5px', fontWeight: '700', fontSize: '11px' }}>{count}</span>
                             : <span style={{ color: '#d1d5db' }}>·</span>}
