@@ -27,6 +27,8 @@ const ALLOWED_KEYS = new Set([
   'hmal-task-groups',
   'hmal-cert-source-col',
   'hmal-task-order',
+  'hmal-dashboard-config',
+  'hmal-soldier-sort-order',
   'schedule-auto-transitions',
 ]);
 
@@ -40,6 +42,8 @@ const KEY_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   'hmal-task-groups':          v => Array.isArray(v),
   'hmal-cert-source-col':      v => typeof v === 'string' || v === null,
   'hmal-task-order':           v => Array.isArray(v),
+  'hmal-dashboard-config':     v => typeof v === 'object' && v !== null && !Array.isArray(v),
+  'hmal-soldier-sort-order':   v => Array.isArray(v),
   'schedule-auto-transitions': v => typeof v === 'boolean' || v === null,
 };
 

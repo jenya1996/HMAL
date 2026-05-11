@@ -1,15 +1,17 @@
 import { useState } from 'react';
-import { Employee, ColumnDef, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup } from '../../types';
+import { Employee, ColumnDef, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup, DashboardConfig } from '../../types';
 import { ScheduleData } from '../Schedule/ScheduleCalendar';
 import { matchesFilters } from '../../lib/employeeFilters';
-import MobileDashboard from './MobileDashboard';
-import MobileAdmin from './MobileAdmin';
+import Dashboard from '../Dashboard/Dashboard';
+import AdminPage from '../Admin/AdminPage';
 import EmployeeList from '../Employees/EmployeeList';
 import ScheduleCalendar from '../Schedule/ScheduleCalendar';
 import Tasks from '../Tasks/Tasks';
 import Settings from '../Settings/Settings';
+import JusticePage from '../Justice/JusticePage';
+import StatsPage from '../Stats/StatsPage';
 
-type MobilePage = 'dashboard' | 'soldiers' | 'schedule' | 'tasks' | 'settings' | 'admin';
+type MobilePage = 'dashboard' | 'soldiers' | 'schedule' | 'tasks' | 'justice' | 'stats' | 'settings' | 'admin';
 
 export interface MobileAppProps {
   employees: Employee[];
@@ -19,6 +21,7 @@ export interface MobileAppProps {
   taskAssignments: TaskAssignments;
   taskRoles: TaskRoles;
   taskGroups: TaskGroup[];
+  dashboardConfig: DashboardConfig;
   isAdmin: boolean;
   onUpdateSchedule: (s: ScheduleData) => void;
   onUpdateAssignments: (a: TaskAssignments) => void;
@@ -28,6 +31,7 @@ export interface MobileAppProps {
   onUpdateColumns: (c: ColumnDef[]) => void;
   onUpdateTaskTemplates: (t: TaskTemplate[]) => void;
   onUpdateTaskGroups: (g: TaskGroup[]) => void;
+  onUpdateDashboardConfig: (c: DashboardConfig) => void;
   onSignOut: () => void;
 }
 
@@ -38,6 +42,8 @@ const BASE_NAV: NavItem[] = [
   { id: 'soldiers',  label: 'Soldiers', icon: '🪖' },
   { id: 'schedule',  label: 'Schedule', icon: '📅' },
   { id: 'tasks',     label: 'Tasks',    icon: '✅' },
+  { id: 'justice',   label: 'Justice',  icon: '⚖️' },
+  { id: 'stats',     label: 'Stats',    icon: '📊' },
   { id: 'settings',  label: 'Settings', icon: '⚙️' },
 ];
 const ADMIN_NAV: NavItem = { id: 'admin', label: 'Admin', icon: '🛡️' };
@@ -47,15 +53,20 @@ const PAGE_TITLES: Record<MobilePage, string> = {
   soldiers:  'Soldiers',
   schedule:  'Schedule',
   tasks:     'Tasks',
+  justice:   'Table of Justice',
+  stats:     'Statistics',
   settings:  'Settings',
   admin:     'Admin',
 };
 
+// Pages that manage their own internal scroll — outer container stays hidden
+const SELF_SCROLL_PAGES: MobilePage[] = ['soldiers', 'schedule', 'tasks', 'settings', 'admin', 'justice', 'stats'];
+
 export default function MobileApp({
   employees, schedule, columnDefs, taskTemplates, taskAssignments, taskRoles, taskGroups,
-  isAdmin,
+  dashboardConfig, isAdmin,
   onUpdateSchedule, onUpdateAssignments, onUpdateRoles, onUpdateEmployees, onDeleteSoldiers,
-  onUpdateColumns, onUpdateTaskTemplates, onUpdateTaskGroups,
+  onUpdateColumns, onUpdateTaskTemplates, onUpdateTaskGroups, onUpdateDashboardConfig,
   onSignOut,
 }: MobileAppProps) {
   const [page, setPage] = useState<MobilePage>('dashboard');
@@ -69,6 +80,9 @@ export default function MobileApp({
   });
 
   const navItems: NavItem[] = isAdmin ? [...BASE_NAV, ADMIN_NAV] : BASE_NAV;
+
+  const outerOverflow = SELF_SCROLL_PAGES.includes(page) ? 'hidden' : 'auto';
+  const outerPadding  = page !== 'dashboard' && page !== 'admin' ? '12px' : '0';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#f8fafc', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -95,8 +109,27 @@ export default function MobileApp({
       </div>
 
       {/* Page content */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: page !== 'dashboard' && page !== 'admin' ? '12px' : '0' }}>
-        {page === 'dashboard' && <MobileDashboard employees={employees} schedule={schedule} />}
+      <div style={{
+        flex: 1,
+        overflow: outerOverflow,
+        display: 'flex',
+        flexDirection: 'column',
+        padding: outerPadding,
+      }}>
+        {page === 'dashboard' && (
+          <div style={{ padding: '16px' }}>
+            <Dashboard
+              employees={employees}
+              schedule={schedule}
+              taskTemplates={taskTemplates}
+              taskAssignments={taskAssignments}
+              taskGroups={taskGroups}
+              dashboardConfig={dashboardConfig}
+              columnDefs={columnDefs}
+              onUpdateDashboardConfig={onUpdateDashboardConfig}
+            />
+          </div>
+        )}
         {page === 'soldiers' && (
           <EmployeeList
             employees={employees}
@@ -134,6 +167,16 @@ export default function MobileApp({
             onUpdateRoles={onUpdateRoles}
           />
         )}
+        {page === 'justice' && (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '24px' }}>
+            <JusticePage />
+          </div>
+        )}
+        {page === 'stats' && (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '24px' }}>
+            <StatsPage />
+          </div>
+        )}
         {page === 'settings' && (
           <Settings
             columnDefs={columnDefs}
@@ -144,14 +187,16 @@ export default function MobileApp({
             onUpdateTaskGroups={onUpdateTaskGroups}
             employees={employees}
             onUpdateEmployees={onUpdateEmployees}
+            dashboardConfig={dashboardConfig}
+            onUpdateDashboardConfig={onUpdateDashboardConfig}
           />
         )}
         {page === 'admin' && isAdmin && (
-          <MobileAdmin employees={employees} />
+          <AdminPage employees={employees} isAdmin={isAdmin} />
         )}
       </div>
 
-      {/* Bottom navigation — scrolls sideways when items overflow */}
+      {/* Bottom navigation — scrolls sideways if 6 items don't fit */}
       <div style={{
         background: 'white',
         borderTop: '1px solid #e2e8f0',
@@ -166,7 +211,7 @@ export default function MobileApp({
         {navItems.map(item => (
           <button key={item.id} onClick={() => setPage(item.id)} style={{
             minWidth: '72px',
-            flexShrink: 0,
+            flex: '1 0 72px',
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             padding: '10px 8px 8px',
             border: 'none', background: 'none', cursor: 'pointer', gap: '3px',

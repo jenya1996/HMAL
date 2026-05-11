@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-type Page = 'dashboard' | 'employees' | 'schedule' | 'tasks' | 'admin' | 'settings';
+type Page = 'dashboard' | 'employees' | 'schedule' | 'tasks' | 'justice' | 'stats' | 'admin' | 'settings';
 
 interface SidebarProps {
   currentPage: Page;
@@ -9,10 +9,12 @@ interface SidebarProps {
 }
 
 const navItems: { page: Page; label: string; icon: string }[] = [
-  { page: 'dashboard', label: 'Dashboard', icon: '🏠' },
-  { page: 'employees', label: 'Soldiers',  icon: '🪖' },
-  { page: 'schedule',  label: 'Schedule',  icon: '📆' },
-  { page: 'tasks',     label: 'Tasks',     icon: '✅' },
+  { page: 'dashboard', label: 'Dashboard',        icon: '🏠' },
+  { page: 'employees', label: 'Soldiers',          icon: '🪖' },
+  { page: 'schedule',  label: 'Schedule',          icon: '📆' },
+  { page: 'tasks',     label: 'Tasks',             icon: '✅' },
+  { page: 'justice',   label: 'Table of Justice',  icon: '⚖️' },
+  { page: 'stats',     label: 'Statistics',        icon: '📊' },
 ];
 
 function NavButton({ item, currentPage, collapsed, onNavigate }: {
@@ -111,7 +113,7 @@ export default function Sidebar({ currentPage, onNavigate, isAdmin }: SidebarPro
       </div>
 
       {/* Main nav */}
-      <nav style={{ flex: 1, padding: '16px 8px' }}>
+      <nav style={{ flex: 1, padding: '16px 8px', overflowY: 'auto' }}>
         {navItems.map(item => (
           <NavButton key={item.page} item={item} currentPage={currentPage} collapsed={collapsed} onNavigate={onNavigate} />
         ))}

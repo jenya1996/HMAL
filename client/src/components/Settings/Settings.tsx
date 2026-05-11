@@ -1,6 +1,41 @@
 import { useState, useRef } from 'react';
-import { ColumnDef, FieldType, TaskTemplate, TaskGroup } from '../../types';
+import { ColumnDef, FieldType, TaskTemplate, TaskGroup, DashboardConfig } from '../../types';
 import { useFirestore } from '../../hooks/useFirestore';
+import { DEFAULT_SOLDIER_SORT, SOLDIER_CATEGORY_META } from '../Tasks/Tasks';
+
+const IDLE_TIMEOUT_KEY     = 'hmal-idle-timeout-ms';
+const IDLE_TIMEOUT_DEFAULT = 15 * 60 * 1000;
+
+const TIMEOUT_OPTIONS = [
+  { label: '5 minutes',  ms: 5  * 60 * 1000 },
+  { label: '15 minutes', ms: 15 * 60 * 1000 },
+  { label: '30 minutes', ms: 30 * 60 * 1000 },
+  { label: '1 hour',     ms: 60 * 60 * 1000 },
+  { label: '2 hours',    ms: 2 * 60 * 60 * 1000 },
+];
+
+const STAT_CARD_IDS = ['total', 'on-base', 'at-home', 'tasks-today', 'free', 'rtn', 'out', 'abs'] as const;
+const STAT_CARD_LABELS: Record<string, string> = {
+  'total':       'Total Soldiers',
+  'on-base':     'On Base Today',
+  'at-home':     'At Home',
+  'tasks-today': 'Tasks Today',
+  'free':        'Free Today',
+  'rtn':         'RTN Today',
+  'out':         'OUT Today',
+  'abs':         'ABS Today',
+};
+
+const PANEL_IDS = ['tasks', 'on-leave', 'free-soldiers', 'returning', 'departed', 'absent', 'departments'] as const;
+const PANEL_LABELS: Record<string, string> = {
+  'tasks':         "Today's Tasks",
+  'on-leave':      'Soldiers at Home',
+  'free-soldiers': 'Free Soldiers Today',
+  'returning':     'Returning Today (RTN)',
+  'departed':      'Departed Today (OUT)',
+  'absent':        'Absent Today (ABS)',
+  'departments':   'Active Soldiers by Department',
+};
 
 const PRESET_COLORS = [
   '#2563eb', '#16a34a', '#dc2626', '#ea580c',
@@ -16,6 +51,8 @@ interface SettingsProps {
   onUpdateTaskGroups: (g: TaskGroup[]) => void;
   employees: import('../../types').Employee[];
   onUpdateEmployees: (e: import('../../types').Employee[]) => void;
+  dashboardConfig: DashboardConfig;
+  onUpdateDashboardConfig: (c: DashboardConfig) => void;
 }
 
 const FIELD_TYPE_LABELS: Record<FieldType, string> = {
@@ -25,8 +62,59 @@ const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   multiselect: 'Multi-select',
 };
 
-export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, onUpdateTaskTemplates, taskGroups, onUpdateTaskGroups, employees, onUpdateEmployees }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<'soldiers' | 'tasks'>('soldiers');
+export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, onUpdateTaskTemplates, taskGroups, onUpdateTaskGroups, employees, onUpdateEmployees, dashboardConfig, onUpdateDashboardConfig }: SettingsProps) {
+  const [activeTab, setActiveTab] = useState<'general' | 'dashboard' | 'soldiers' | 'tasks' | 'justice' | 'stats'>('general');
+
+  // ── General tab: session timeout ──────────────────────────────────────────
+  const [idleTimeout, setIdleTimeoutState] = useState<number>(() => {
+    const stored = localStorage.getItem(IDLE_TIMEOUT_KEY);
+    return stored ? parseInt(stored, 10) : IDLE_TIMEOUT_DEFAULT;
+  });
+  const [timeoutSaved, setTimeoutSaved] = useState(false);
+
+  function handleTimeoutChange(ms: number) {
+    localStorage.setItem(IDLE_TIMEOUT_KEY, String(ms));
+    setIdleTimeoutState(ms);
+    setTimeoutSaved(true);
+    setTimeout(() => setTimeoutSaved(false), 2000);
+  }
+
+  // ── Dashboard tab helpers ─────────────────────────────────────────────────
+  function toggleStatCard(id: string) {
+    const hidden = dashboardConfig.hiddenStatCards ?? [];
+    const next = hidden.includes(id) ? hidden.filter(x => x !== id) : [...hidden, id];
+    onUpdateDashboardConfig({ ...dashboardConfig, hiddenStatCards: next });
+  }
+
+  function togglePanel(id: string) {
+    const hidden = dashboardConfig.hiddenPanels ?? [];
+    const next = hidden.includes(id) ? hidden.filter(x => x !== id) : [...hidden, id];
+    onUpdateDashboardConfig({ ...dashboardConfig, hiddenPanels: next });
+  }
+
+  function toggleColFilter(colKey: string, value: string) {
+    const current = dashboardConfig.soldierColumnFilters ?? {};
+    const selected = current[colKey] ?? [];
+    const next = selected.includes(value) ? selected.filter(x => x !== value) : [...selected, value];
+    const nextFilters = { ...current, [colKey]: next };
+    if (next.length === 0) delete nextFilters[colKey];
+    onUpdateDashboardConfig({ ...dashboardConfig, soldierColumnFilters: nextFilters });
+  }
+
+  function clearColFilter(colKey: string) {
+    const current = { ...dashboardConfig.soldierColumnFilters };
+    delete current[colKey];
+    onUpdateDashboardConfig({ ...dashboardConfig, soldierColumnFilters: current });
+  }
+
+  // Columns that can be used as dashboard filters (have options)
+  const filterableCols = columnDefs.filter(col => {
+    if (col.key === 'status') return true;
+    return col.fieldType === 'dropdown' || col.fieldType === 'multiselect';
+  }).filter(col => {
+    const opts = col.key === 'status' ? ['Active', 'Inactive', 'Annexation'] : (col.options ?? []);
+    return opts.length > 0;
+  });
   const [newColLabel, setNewColLabel] = useState('');
   const [newColType, setNewColType] = useState<FieldType>('text');
 
@@ -41,6 +129,21 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   const [tplGroupId, setTplGroupId]       = useState<string>('');
   const [editingTpl, setEditingTpl]     = useState<string | null>(null);
   const [certSourceKey, setCertSourceKey] = useFirestore<string>('hmal-cert-source-col', '');
+
+  // Soldier sort order
+  const [soldierSortOrder, setSoldierSortOrder] = useFirestore<string[]>('hmal-soldier-sort-order', DEFAULT_SOLDIER_SORT);
+  const soldierDragIdx = useRef<number | null>(null);
+  const [soldierDragOver, setSoldierDragOver] = useState<number | null>(null);
+
+  function handleSoldierSortDrop(toIdx: number) {
+    if (soldierDragIdx.current === null || soldierDragIdx.current === toIdx) { setSoldierDragOver(null); return; }
+    const next = [...soldierSortOrder];
+    const [moved] = next.splice(soldierDragIdx.current, 1);
+    next.splice(toIdx, 0, moved);
+    setSoldierSortOrder(next);
+    soldierDragIdx.current = null;
+    setSoldierDragOver(null);
+  }
 
   // Group management state
   const [newGroupName, setNewGroupName]         = useState('');
@@ -195,19 +298,23 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
     fontSize: '13px', outline: 'none', background: 'white',
   };
 
-  const tabBtn = (tab: 'soldiers' | 'tasks'): React.CSSProperties => ({
+  const tabBtn = (tab: string): React.CSSProperties => ({
     padding: '9px 22px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
     border: 'none', borderBottom: activeTab === tab ? '2px solid #2563eb' : '2px solid transparent',
     background: 'none', color: activeTab === tab ? '#2563eb' : '#64748b',
-    transition: 'color 0.1s',
+    transition: 'color 0.1s', whiteSpace: 'nowrap',
   });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0' }}>
       {/* Tab bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', flexShrink: 0, background: 'white', borderRadius: '12px 12px 0 0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', paddingLeft: '8px' }}>
-        <button style={tabBtn('soldiers')} onClick={() => setActiveTab('soldiers')}>Soldier Table</button>
-        <button style={tabBtn('tasks')} onClick={() => setActiveTab('tasks')}>Task Templates</button>
+      <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', flexShrink: 0, background: 'white', borderRadius: '12px 12px 0 0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', paddingLeft: '8px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+        <button style={tabBtn('general')}   onClick={() => setActiveTab('general')}>General</button>
+        <button style={tabBtn('dashboard')} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
+        <button style={tabBtn('soldiers')}  onClick={() => setActiveTab('soldiers')}>Soldier Table</button>
+        <button style={tabBtn('tasks')}     onClick={() => setActiveTab('tasks')}>Task Templates</button>
+        <button style={tabBtn('justice')}   onClick={() => setActiveTab('justice')}>Table of Justice</button>
+        <button style={tabBtn('stats')}     onClick={() => setActiveTab('stats')}>Statistics</button>
       </div>
 
       {/* Tab content */}
@@ -217,6 +324,171 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
         padding: '24px',
         background: 'white', borderRadius: '0 0 12px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
       }}>
+
+      {activeTab === 'general' && (
+      <div style={{ maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+
+        {/* Session timeout */}
+        <section>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#374151', marginBottom: '4px' }}>Auto Sign-Out</div>
+          <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 12px' }}>
+            Automatically sign out after this period of inactivity.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+            {TIMEOUT_OPTIONS.map(opt => (
+              <button
+                key={opt.ms}
+                onClick={() => handleTimeoutChange(opt.ms)}
+                style={{
+                  padding: '7px 18px', borderRadius: '9999px', cursor: 'pointer', fontSize: '13px',
+                  fontWeight: idleTimeout === opt.ms ? '700' : '400',
+                  border: `1.5px solid ${idleTimeout === opt.ms ? '#2563eb' : '#e2e8f0'}`,
+                  background: idleTimeout === opt.ms ? '#eff6ff' : 'white',
+                  color: idleTimeout === opt.ms ? '#2563eb' : '#64748b',
+                  transition: 'all 0.1s',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+            {timeoutSaved && (
+              <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: '600' }}>Saved</span>
+            )}
+          </div>
+        </section>
+
+        {/* App info */}
+        <section>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#374151', marginBottom: '12px' }}>App Information</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[
+              { label: 'Soldiers', value: `${employees.length} total · ${employees.filter(e => e.status === 'Active').length} active` },
+              { label: 'Custom Columns', value: String(columnDefs.filter(c => !c.builtin).length) },
+              { label: 'Task Templates', value: String(taskTemplates.length) },
+              { label: 'Task Groups', value: String(taskGroups.length) },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <span style={{ fontSize: '13px', color: '#374151', fontWeight: '500' }}>{label}</span>
+                <span style={{ fontSize: '13px', color: '#64748b' }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+      </div>
+      )}
+
+      {activeTab === 'dashboard' && (
+      <div style={{ maxWidth: '700px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+
+        {/* Stat Cards */}
+        <section>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#374151', marginBottom: '4px' }}>Stat Cards</div>
+          <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 12px' }}>
+            Toggle which stat cards appear at the top of the dashboard. Blue = visible.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {STAT_CARD_IDS.map(id => {
+              const hidden = (dashboardConfig.hiddenStatCards ?? []).includes(id);
+              return (
+                <button key={id} onClick={() => toggleStatCard(id)} style={{
+                  padding: '6px 16px', borderRadius: '9999px', cursor: 'pointer', fontSize: '13px',
+                  fontWeight: hidden ? '400' : '600',
+                  border: `1.5px solid ${hidden ? '#e2e8f0' : '#2563eb'}`,
+                  background: hidden ? '#f8fafc' : '#eff6ff',
+                  color: hidden ? '#94a3b8' : '#2563eb',
+                  transition: 'all 0.1s',
+                }}>
+                  {hidden ? '' : '✓ '}{STAT_CARD_LABELS[id]}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Panels */}
+        <section>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#374151', marginBottom: '4px' }}>Dashboard Panels</div>
+          <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 12px' }}>
+            Toggle which panels appear on the dashboard. Blue = visible.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {PANEL_IDS.map(id => {
+              const hidden = (dashboardConfig.hiddenPanels ?? []).includes(id);
+              return (
+                <button key={id} onClick={() => togglePanel(id)} style={{
+                  padding: '6px 16px', borderRadius: '9999px', cursor: 'pointer', fontSize: '13px',
+                  fontWeight: hidden ? '400' : '600',
+                  border: `1.5px solid ${hidden ? '#e2e8f0' : '#2563eb'}`,
+                  background: hidden ? '#f8fafc' : '#eff6ff',
+                  color: hidden ? '#94a3b8' : '#2563eb',
+                  transition: 'all 0.1s',
+                }}>
+                  {hidden ? '' : '✓ '}{PANEL_LABELS[id]}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Soldier filter */}
+        <section>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#374151', marginBottom: '4px' }}>Soldier Filter</div>
+          <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 16px' }}>
+            Only include soldiers matching these criteria in dashboard data. Select multiple values per column. Leave all unchecked to include everyone.
+          </p>
+          {filterableCols.length === 0 ? (
+            <div style={{ fontSize: '13px', color: '#cbd5e1', fontStyle: 'italic', padding: '20px', textAlign: 'center', border: '1px dashed #e2e8f0', borderRadius: '8px' }}>
+              No filterable columns available. Add dropdown or multiselect columns in the Soldier Table tab.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {filterableCols.map(col => {
+                const selected = dashboardConfig.soldierColumnFilters?.[col.key] ?? [];
+                const options = col.key === 'status' ? ['Active', 'Inactive', 'Annexation'] : (col.options ?? []);
+                return (
+                  <div key={col.key} style={{ padding: '14px 16px', borderRadius: '8px', border: `1px solid ${selected.length > 0 ? '#bfdbfe' : '#e2e8f0'}`, background: selected.length > 0 ? '#f0f7ff' : '#f8fafc' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: '#334155' }}>{col.label}</span>
+                      {selected.length > 0 && (
+                        <button
+                          onClick={() => clearColFilter(col.key)}
+                          style={{ fontSize: '11px', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: '600' }}
+                        >
+                          Clear ({selected.length})
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {options.map(opt => {
+                        const active = selected.includes(opt);
+                        return (
+                          <button
+                            key={opt}
+                            onClick={() => toggleColFilter(col.key, opt)}
+                            style={{
+                              padding: '4px 12px', borderRadius: '9999px', cursor: 'pointer', fontSize: '12px',
+                              fontWeight: active ? '700' : '400',
+                              border: `1.5px solid ${active ? '#2563eb' : '#e2e8f0'}`,
+                              background: active ? '#2563eb' : 'white',
+                              color: active ? 'white' : '#64748b',
+                              transition: 'all 0.1s',
+                            }}
+                          >
+                            {opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+      </div>
+      )}
 
       {activeTab === 'soldiers' && (
       <div style={{ maxWidth: '600px' }}>
@@ -406,11 +678,89 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
       </div>
       )}
 
+      {activeTab === 'justice' && (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', gap: '16px' }}>
+        <div style={{ fontSize: '48px' }}>⚖️</div>
+        <h2 style={{ fontSize: '22px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Table of Justice</h2>
+        <p style={{ fontSize: '14px', color: '#94a3b8', margin: 0 }}>Settings coming soon.</p>
+      </div>
+      )}
+
+      {activeTab === 'stats' && (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', gap: '16px' }}>
+        <div style={{ fontSize: '48px' }}>📊</div>
+        <h2 style={{ fontSize: '22px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Statistics</h2>
+        <p style={{ fontSize: '14px', color: '#94a3b8', margin: 0 }}>Settings coming soon.</p>
+      </div>
+      )}
+
       {activeTab === 'tasks' && (
       <div style={{ maxWidth: '600px' }}>
         <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '20px' }}>
           Define recurring tasks with time slots and required headcount.
         </p>
+
+        {/* ── Soldier Sort Order ── */}
+        <div style={{ marginBottom: '24px', padding: '14px 16px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+          <div style={{ fontSize: '13px', fontWeight: '700', color: '#374151', marginBottom: '4px' }}>Soldier Order in Task Edit</div>
+          <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 12px' }}>
+            Drag to set the order soldiers appear in the assignment panel.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {soldierSortOrder.map((cat, i) => {
+              const meta = SOLDIER_CATEGORY_META[cat];
+              if (!meta) return null;
+              function moveChip(from: number, to: number) {
+                const next = [...soldierSortOrder];
+                const [moved] = next.splice(from, 1);
+                next.splice(to, 0, moved);
+                setSoldierSortOrder(next);
+              }
+              return (
+                <div
+                  key={cat}
+                  draggable
+                  onDragStart={() => { soldierDragIdx.current = i; }}
+                  onDragEnter={() => setSoldierDragOver(i)}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={() => handleSoldierSortDrop(i)}
+                  onDragEnd={() => { soldierDragIdx.current = null; setSoldierDragOver(null); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '5px',
+                    padding: '5px 8px 5px 10px', borderRadius: '8px', cursor: 'grab',
+                    userSelect: 'none', transition: 'border-color 0.1s, background 0.1s',
+                    border: `2px solid ${soldierDragOver === i ? '#2563eb' : '#e2e8f0'}`,
+                    background: soldierDragOver === i ? '#eff6ff' : 'white',
+                  }}
+                >
+                  <span style={{ fontSize: '12px', color: '#cbd5e1' }}>⠿</span>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#374151' }}>{meta.label}</span>
+                  <span style={{ fontSize: '11px', color: '#94a3b8', display: 'none' }} className="sort-desc">{meta.description}</span>
+                  {/* Arrow buttons for touch devices */}
+                  <button
+                    onClick={() => i > 0 && moveChip(i, i - 1)}
+                    disabled={i === 0}
+                    style={{
+                      border: 'none', background: 'none', padding: '2px 3px', cursor: i === 0 ? 'default' : 'pointer',
+                      color: i === 0 ? '#e2e8f0' : '#94a3b8', fontSize: '13px', lineHeight: 1, borderRadius: '4px',
+                    }}
+                    aria-label="Move left"
+                  >←</button>
+                  <button
+                    onClick={() => i < soldierSortOrder.length - 1 && moveChip(i, i + 1)}
+                    disabled={i === soldierSortOrder.length - 1}
+                    style={{
+                      border: 'none', background: 'none', padding: '2px 3px', cursor: i === soldierSortOrder.length - 1 ? 'default' : 'pointer',
+                      color: i === soldierSortOrder.length - 1 ? '#e2e8f0' : '#94a3b8', fontSize: '13px', lineHeight: 1, borderRadius: '4px',
+                    }}
+                    aria-label="Move right"
+                  >→</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         {/* ── Groups ── */}
         <div style={{ marginBottom: '24px' }}>

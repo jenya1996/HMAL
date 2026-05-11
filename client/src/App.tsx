@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { apiFetch } from './lib/api';
 import LoginPage from './components/Auth/LoginPage';
-import { Employee, ColumnDef, DEFAULT_COLUMNS, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup } from './types';
+import { Employee, ColumnDef, DEFAULT_COLUMNS, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup, DashboardConfig, DEFAULT_DASHBOARD_CONFIG } from './types';
 import { matchesFilters } from './lib/employeeFilters';
 import { useFirestore } from './hooks/useFirestore';
 import Sidebar from './components/Layout/Sidebar';
@@ -12,22 +12,23 @@ import ScheduleCalendar, { ScheduleData } from './components/Schedule/ScheduleCa
 import Tasks from './components/Tasks/Tasks';
 import Settings from './components/Settings/Settings';
 import AdminPage from './components/Admin/AdminPage';
+import JusticePage from './components/Justice/JusticePage';
+import StatsPage from './components/Stats/StatsPage';
 import MobileApp from './components/mobile/MobileApp';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const HMAL_STORAGE_KEYS = [
   'hmal-soldiers-v2', 'hmal-schedule', 'hmal-columns-v1',
   'hmal-task-templates', 'hmal-task-assignments', 'hmal-task-roles',
-  'hmal-task-groups', 'hmal-cert-source-col',
+  'hmal-task-groups', 'hmal-cert-source-col', 'hmal-dashboard-config',
 ];
 
 export const IDLE_TIMEOUT_KEY     = 'hmal-idle-timeout-ms';
-export const IDLE_TIMEOUT_DEFAULT = 15 * 60 * 1000; // 15 minutes
+export const IDLE_TIMEOUT_DEFAULT = 15 * 60 * 1000;
 
+type Page = 'dashboard' | 'employees' | 'schedule' | 'tasks' | 'justice' | 'stats' | 'admin' | 'settings';
 
-type Page = 'dashboard' | 'employees' | 'schedule' | 'tasks' | 'admin' | 'settings';
-
-const VALID_PAGES: Page[] = ['dashboard', 'employees', 'schedule', 'tasks', 'admin', 'settings'];
+const VALID_PAGES: Page[] = ['dashboard', 'employees', 'schedule', 'tasks', 'justice', 'stats', 'admin', 'settings'];
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
@@ -45,7 +46,6 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
   const [currentPage, setCurrentPageState] = useState<Page>(() => {
     const saved = sessionStorage.getItem('hmal-current-page') as Page | null;
     if (saved && VALID_PAGES.includes(saved)) {
-      // Non-admins can't land on admin page after reload
       if (saved === 'admin' && !isAdmin) return 'dashboard';
       return saved;
     }
@@ -57,40 +57,43 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
     setCurrentPageState(page);
   }
 
-  // Auto-logout after configurable idle period (reads localStorage each tick so changes apply immediately)
   useEffect(() => {
     let lastActivity = Date.now();
     const resetTimer = () => { lastActivity = Date.now(); };
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'] as const;
     events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
-
     const interval = setInterval(() => {
       const stored = localStorage.getItem(IDLE_TIMEOUT_KEY);
       const parsed = stored ? parseInt(stored, 10) : IDLE_TIMEOUT_DEFAULT;
       const MIN_TIMEOUT = 5 * 60 * 1000;
       const MAX_TIMEOUT = 2 * 60 * 60 * 1000;
       const timeout = (Number.isFinite(parsed) && parsed >= MIN_TIMEOUT && parsed <= MAX_TIMEOUT)
-        ? parsed
-        : IDLE_TIMEOUT_DEFAULT;
+        ? parsed : IDLE_TIMEOUT_DEFAULT;
       if (Date.now() - lastActivity >= timeout) {
         apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
         onSignOut();
       }
     }, 30_000);
-
     return () => {
       events.forEach(e => window.removeEventListener(e, resetTimer));
       clearInterval(interval);
     };
   }, [onSignOut]);
+
   const [soldierSearch,  setSoldierSearch]  = useState('');
   const [soldierFilters, setSoldierFilters] = useState<Record<string, string>>({});
-  const [syncError,         setSyncError]         = useState<string | null>(null);
-  const [storageWarning,    setStorageWarning]    = useState(false);
+  const [syncError,      setSyncError]      = useState<string | null>(null);
+  const [storageWarning, setStorageWarning] = useState(false);
 
-  const [employees,       setEmployees]       = useFirestore<Employee[]>('hmal-soldiers-v2', []);
-  const [schedule,        setSchedule]        = useFirestore<ScheduleData>('hmal-schedule', {});
-  const [columnDefs,      setColumnDefs]      = useFirestore<ColumnDef[]>('hmal-columns-v1', DEFAULT_COLUMNS);
+  const [employees,        setEmployees]        = useFirestore<Employee[]>('hmal-soldiers-v2', []);
+  const [schedule,         setSchedule]         = useFirestore<ScheduleData>('hmal-schedule', {});
+  const [columnDefs,       setColumnDefs]       = useFirestore<ColumnDef[]>('hmal-columns-v1', DEFAULT_COLUMNS);
+  const [taskTemplates,    setTaskTemplates]    = useFirestore<TaskTemplate[]>('hmal-task-templates', []);
+  const [taskAssignments,  setTaskAssignments]  = useFirestore<TaskAssignments>('hmal-task-assignments', {});
+  const [taskRoles,        setTaskRoles]        = useFirestore<TaskRoles>('hmal-task-roles', {});
+  const [taskGroups,       setTaskGroups]       = useFirestore<TaskGroup[]>('hmal-task-groups', []);
+  const [dashboardConfig,  setDashboardConfig]  = useFirestore<DashboardConfig>('hmal-dashboard-config', DEFAULT_DASHBOARD_CONFIG);
+
   const migratedDept = useRef(false);
   useEffect(() => {
     if (migratedDept.current || columnDefs.length === 0) return;
@@ -109,12 +112,6 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
     }
   }, [columnDefs]);
 
-  const [taskTemplates,   setTaskTemplates]   = useFirestore<TaskTemplate[]>('hmal-task-templates', []);
-  const [taskAssignments, setTaskAssignments] = useFirestore<TaskAssignments>('hmal-task-assignments', {});
-  const [taskRoles,       setTaskRoles]       = useFirestore<TaskRoles>('hmal-task-roles', {});
-  const [taskGroups,      setTaskGroups]      = useFirestore<TaskGroup[]>('hmal-task-groups', []);
-
-  // Listen for Firestore write failures and localStorage quota errors
   useEffect(() => {
     const onSyncError = (e: Event) => {
       setSyncError((e as CustomEvent<string>).detail);
@@ -140,34 +137,26 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
   const handleDeleteSoldiers = useCallback((ids: string[]) => {
     const idsSet = new Set(ids);
     setEmployees(employees.filter(e => !idsSet.has(e.id)));
-
     const newSchedule = Object.fromEntries(
       Object.entries(schedule).filter(([empId]) => !idsSet.has(empId))
     ) as ScheduleData;
     setSchedule(newSchedule);
-
     const newAssignments = Object.fromEntries(
       Object.entries(taskAssignments).map(([tplId, dates]) => [
         tplId,
         Object.fromEntries(
-          Object.entries(dates).map(([date, empIds]) => [
-            date,
-            empIds.filter(id => !idsSet.has(id)),
-          ])
+          Object.entries(dates).map(([date, empIds]) => [date, empIds.filter(id => !idsSet.has(id))])
         ),
       ])
     ) as TaskAssignments;
     setTaskAssignments(newAssignments);
-
     const newRoles = Object.fromEntries(
       Object.entries(taskRoles).map(([tplId, dates]) => [
         tplId,
         Object.fromEntries(
           Object.entries(dates).map(([date, roleMap]) => [
             date,
-            Object.fromEntries(
-              Object.entries(roleMap).filter(([empId]) => !idsSet.has(empId))
-            ),
+            Object.fromEntries(Object.entries(roleMap).filter(([empId]) => !idsSet.has(empId))),
           ])
         ),
       ])
@@ -180,9 +169,13 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
     employees: 'Soldiers',
     schedule:  'Schedule',
     tasks:     'Tasks',
+    justice:   'Table of Justice',
+    stats:     'Statistics',
     admin:     'Admin',
     settings:  'Settings',
   };
+
+  const scrollablePages: Page[] = ['dashboard', 'justice', 'stats'];
 
   if (isMobile) {
     return (
@@ -194,6 +187,7 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
         taskAssignments={taskAssignments}
         taskRoles={taskRoles}
         taskGroups={taskGroups}
+        dashboardConfig={dashboardConfig}
         isAdmin={isAdmin}
         onUpdateSchedule={setSchedule}
         onUpdateAssignments={setTaskAssignments}
@@ -203,6 +197,7 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
         onUpdateColumns={setColumnDefs}
         onUpdateTaskTemplates={setTaskTemplates}
         onUpdateTaskGroups={setTaskGroups}
+        onUpdateDashboardConfig={setDashboardConfig}
         onSignOut={onSignOut}
       />
     );
@@ -214,7 +209,6 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Header title={pageTitles[currentPage]} onSignOut={onSignOut} />
 
-        {/* Sync error banner */}
         {syncError && (
           <div style={{ padding: '10px 20px', background: '#fef2f2', borderBottom: '1px solid #fecaca', color: '#dc2626', fontSize: '13px', fontWeight: '500', display: 'flex', justifyContent: 'space-between' }}>
             <span>⚠ {syncError}</span>
@@ -228,9 +222,18 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
           </div>
         )}
 
-        <main style={{ flex: 1, overflow: 'hidden', padding: '24px', display: 'flex', flexDirection: 'column' }}>
+        <main style={{ flex: 1, overflow: scrollablePages.includes(currentPage) ? 'auto' : 'hidden', padding: '24px', display: 'flex', flexDirection: 'column' }}>
           {currentPage === 'dashboard' && (
-            <Dashboard employees={employees} />
+            <Dashboard
+              employees={employees}
+              schedule={schedule}
+              taskTemplates={taskTemplates}
+              taskAssignments={taskAssignments}
+              taskGroups={taskGroups}
+              dashboardConfig={dashboardConfig}
+              columnDefs={columnDefs}
+              onUpdateDashboardConfig={setDashboardConfig}
+            />
           )}
           {currentPage === 'employees' && (
             <EmployeeList
@@ -269,6 +272,8 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
               onUpdateRoles={setTaskRoles}
             />
           )}
+          {currentPage === 'justice' && <JusticePage />}
+          {currentPage === 'stats'   && <StatsPage />}
           {currentPage === 'admin' && isAdmin && (
             <AdminPage employees={employees} isAdmin={isAdmin} />
           )}
@@ -282,6 +287,8 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
               onUpdateTaskGroups={setTaskGroups}
               employees={employees}
               onUpdateEmployees={setEmployees}
+              dashboardConfig={dashboardConfig}
+              onUpdateDashboardConfig={setDashboardConfig}
             />
           )}
         </main>

@@ -29,6 +29,16 @@ const STATUS_STYLE: Partial<Record<CellStatus, { bg: string; border: string; col
   'returning': { bg: '#fef9c3', border: '#fde68a', color: '#a16207', label: 'RTN' },
 };
 
+export const DEFAULT_SOLDIER_SORT = ['available', 'rtn', 'out', 'overwork', 'busy', 'rest'];
+export const SOLDIER_CATEGORY_META: Record<string, { label: string; color: string; description: string }> = {
+  available: { label: 'Available', color: '#16a34a', description: 'on base, no issues' },
+  rtn:       { label: 'RTN',       color: '#a16207', description: 'returning today' },
+  out:       { label: 'OUT',       color: '#c2410c', description: 'departing today' },
+  overwork:  { label: '8+8',       color: '#dc2626', description: 'overwork warning' },
+  busy:      { label: 'Busy',      color: '#475569', description: 'time conflict' },
+  rest:      { label: 'Rest',      color: '#94a3b8', description: 'in rest period' },
+};
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -58,8 +68,8 @@ function dayNumber(dk: string): number {
 function taskAbsRange(dk: string, tpl: TaskTemplate): [number, number] {
   const base  = dayNumber(dk) * 1440;
   const start = base + timeToMins(tpl.startTime);
-  const end   = timeToMins(tpl.endTime) < timeToMins(tpl.startTime)
-    ? base + 1440 + timeToMins(tpl.endTime)   // overnight: ends next day
+  const end   = timeToMins(tpl.endTime) <= timeToMins(tpl.startTime)
+    ? base + 1440 + timeToMins(tpl.endTime)   // overnight or 24-h (start===end): ends next day
     : base + timeToMins(tpl.endTime);
   return [start, end];
 }
@@ -88,9 +98,10 @@ function hasTimeConflict(
   for (const other of allTemplates) {
     if (other.id === templateId) continue;
     const isOvernightOther = timeToMins(other.endTime) < timeToMins(other.startTime);
+    const sameDayIds = allAssignments[other.id]?.[dk] ?? [];
 
     // Same day
-    if ((allAssignments[other.id]?.[dk] ?? []).includes(empId)) {
+    if (sameDayIds.includes(empId)) {
       const [oS, oE] = taskAbsRange(dk, other);
       if (oS < tEnd && oE > tStart) return `${other.startTime}–${other.endTime}`;
     }
@@ -184,7 +195,7 @@ function soldierCerts(emp: Employee, certSourceKey: string): string[] {
   return raw.split('|').map(s => s.trim()).filter(Boolean);
 }
 
-function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onToggle, onClose, certSourceKey, taskGroups, allTaskTemplates, allTaskAssignments }: {
+function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onToggle, onClose, certSourceKey, taskGroups, allTaskTemplates, allTaskAssignments, soldierSortOrder }: {
   tpl:               TaskTemplate;
   dk:                string;
   sidebarSoldiers:   Array<{ emp: Employee; status: CellStatus }>;
@@ -196,6 +207,7 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
   taskGroups:        TaskGroup[];
   allTaskTemplates:  TaskTemplate[];
   allTaskAssignments: TaskAssignments;
+  soldierSortOrder:  string[];
 }) {
   const group        = taskGroups.find(g => g.id === tpl.groupId);
   const intervalMins = (group?.intervalHours ?? 0) * 60;
@@ -225,6 +237,12 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
     const availMins = (maxBlockEnd + intervalMins) % 1440;
     return `${String(Math.floor(availMins / 60)).padStart(2, '0')}:${String(availMins % 60).padStart(2, '0')}`;
   }
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  function toggleSection(label: string) {
+    setCollapsedSections(prev => ({ ...prev, [label]: !prev[label] }));
+  }
+
   const requiredCerts = tpl.certifications ?? [];
   const full          = assigned.length >= tpl.requiredSoldiers;
 
@@ -247,11 +265,19 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
   const assignedSoldiers = sidebarSoldiers.filter(({ emp }) => assigned.includes(emp.id));
   const unassigned       = sidebarSoldiers.filter(({ emp }) => !assigned.includes(emp.id));
 
-  function sortPriority({ emp }: { emp: Employee; status: CellStatus }): number {
-    if (getBlockedUntil(emp.id) !== null) return 2;      // rest → bottom
-    if (getTimeConflict(emp.id) !== null) return 2;      // busy → bottom
-    if (getOverworkWarning(emp.id) !== '') return 1;     // overwork → middle
-    return 0;                                            // free → top
+  function getCategory(empId: string, status: CellStatus): string {
+    if (getBlockedUntil(empId) !== null) return 'rest';
+    if (getTimeConflict(empId) !== null) return 'busy';
+    if (getOverworkWarning(empId) !== '') return 'overwork';
+    if (status === 'returning') return 'rtn';
+    if (status === 'departed') return 'out';
+    return 'available';
+  }
+
+  function sortPriority({ emp, status }: { emp: Employee; status: CellStatus }): number {
+    const cat = getCategory(emp.id, status);
+    const idx = soldierSortOrder.indexOf(cat);
+    return idx === -1 ? soldierSortOrder.length : idx;
   }
 
   function sortedSoldiers(list: Array<{ emp: Employee; status: CellStatus }>) {
@@ -308,20 +334,27 @@ function AssignmentPanel({ tpl, dk, sidebarSoldiers, assigned, slotRoles, onTogg
 
   function renderSection(label: string, cert: string | undefined, soldiers: Array<{ emp: Employee; status: CellStatus }>, isAssignedSection: boolean, isCertFull?: boolean, alwaysShow = false) {
     if (soldiers.length === 0 && !isAssignedSection && !alwaysShow) return null;
-    const headerColor = isAssignedSection ? '#15803d' : isCertFull ? '#94a3b8' : '#94a3b8';
+    const isCollapsed = !!collapsedSections[label];
+    const headerColor = isAssignedSection ? '#15803d' : '#94a3b8';
     return (
       <div key={label} style={{ marginBottom: '10px' }}>
-        <div style={{ fontSize: '10px', fontWeight: '700', color: headerColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px', paddingLeft: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <div
+          onClick={() => toggleSection(label)}
+          style={{ fontSize: '10px', fontWeight: '700', color: headerColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: isCollapsed ? 0 : '4px', paddingLeft: '2px', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', userSelect: 'none' }}
+        >
+          <span style={{ fontSize: '9px', flexShrink: 0, lineHeight: 1 }}>{isCollapsed ? '▸' : '▾'}</span>
           {label}
           {isAssignedSection && <span style={{ background: '#dcfce7', color: '#15803d', borderRadius: '9999px', padding: '0px 6px', fontSize: '10px', fontWeight: '700' }}>{soldiers.length}</span>}
           {isCertFull && !isAssignedSection && <span style={{ background: '#f1f5f9', color: '#94a3b8', borderRadius: '9999px', padding: '0px 6px', fontSize: '10px', fontWeight: '700' }}>full</span>}
         </div>
-        {soldiers.length === 0 ? (
-          <div style={{ fontSize: '11px', color: '#cbd5e1', fontStyle: 'italic', paddingLeft: '2px' }}>None</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-            {soldiers.map(s => renderSoldierRow(s, isAssignedSection, cert, isCertFull))}
-          </div>
+        {!isCollapsed && (
+          soldiers.length === 0 ? (
+            <div style={{ fontSize: '11px', color: '#cbd5e1', fontStyle: 'italic', paddingLeft: '2px' }}>None</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              {soldiers.map(s => renderSoldierRow(s, isAssignedSection, cert, isCertFull))}
+            </div>
+          )
         )}
       </div>
     );
@@ -373,6 +406,7 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
   const [certSourceKey]                   = useFirestore<string>('hmal-cert-source-col', '');
+  const [soldierSortOrder]               = useFirestore<string[]>('hmal-soldier-sort-order', DEFAULT_SOLDIER_SORT);
   const [viewMode, setViewMode]           = useLocalStorage<ViewMode>('tasks-view-mode', 'day');
   const [anchor, setAnchor]               = useState<Date>(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
   const [customFrom, setCustomFrom]       = useLocalStorage('tasks-custom-from', '');
@@ -693,8 +727,8 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
                           {/* ── Continuation blocks: overnight tasks from previous day ── */}
                           {colLayout
                             .filter(({ tpl }) => {
-                              const e = timeToMins(tpl.endTime);
-                              return e < timeToMins(tpl.startTime) && e > 0; // overnight, ends after 00:00
+                              const e = timeToMins(tpl.endTime), s = timeToMins(tpl.startTime);
+                              return (e < s && e > 0) || (e === s && s > 0); // overnight or 24h not at midnight
                             })
                             .map(({ tpl, col, totalCols }) => {
                               const endMins  = timeToMins(tpl.endTime);
@@ -726,9 +760,11 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
 
                           {/* ── Main task blocks ── */}
                           {colLayout.map(({ tpl, col, totalCols }) => {
-                            const isOvernight = timeToMins(tpl.endTime) < timeToMins(tpl.startTime);
+                            const is24h       = timeToMins(tpl.endTime) === timeToMins(tpl.startTime);
                             const startMins   = timeToMins(tpl.startTime);
-                            const headEndMins = isOvernight ? 24 * 60 : timeToMins(tpl.endTime);
+                            // 24h task not at midnight still overflows past midnight (needs dashed border + continuation)
+                            const isOvernight = is24h ? startMins > 0 : timeToMins(tpl.endTime) < timeToMins(tpl.startTime);
+                            const headEndMins = (isOvernight || is24h) ? 24 * 60 : timeToMins(tpl.endTime);
                             const top         = (startMins / 60) * HOUR_HEIGHT;
                             const height      = Math.max((headEndMins - startMins) / 60 * HOUR_HEIGHT, 32);
                             const assigned    = getAssigned(tpl.id, dayDk);
@@ -785,7 +821,8 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
                   slotRoles={taskRoles[selectedTpl.id]?.[selectedCell.dk] ?? {}}
                   onToggle={(empId, cert) => toggleAssignment(selectedTpl.id, selectedCell.dk, empId, cert)}
                   onClose={() => setSelectedCell(null)} certSourceKey={certSourceKey}
-                  taskGroups={taskGroups} allTaskTemplates={taskTemplates} allTaskAssignments={taskAssignments} />
+                  taskGroups={taskGroups} allTaskTemplates={taskTemplates} allTaskAssignments={taskAssignments}
+                  soldierSortOrder={soldierSortOrder} />
               )}
             </div>
 
@@ -912,7 +949,8 @@ export default function Tasks({ employees, schedule, taskTemplates, taskAssignme
                   slotRoles={taskRoles[selectedTpl.id]?.[selectedCell.dk] ?? {}}
                   onToggle={(empId, cert) => toggleAssignment(selectedTpl.id, selectedCell.dk, empId, cert)}
                   onClose={() => setSelectedCell(null)} certSourceKey={certSourceKey}
-                  taskGroups={taskGroups} allTaskTemplates={taskTemplates} allTaskAssignments={taskAssignments} />
+                  taskGroups={taskGroups} allTaskTemplates={taskTemplates} allTaskAssignments={taskAssignments}
+                  soldierSortOrder={soldierSortOrder} />
               )}
             </div>
           )}

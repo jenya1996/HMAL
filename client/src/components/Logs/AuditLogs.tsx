@@ -88,8 +88,10 @@ export default function AuditLogs() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [liveStatus, setLiveStatus] = useState<'connecting' | 'live' | 'off'>('connecting');
 
-  const esRef = useRef<EventSource | null>(null);
+  const esRef           = useRef<EventSource | null>(null);
+  const assumeLiveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [filtersOpen,    setFiltersOpen]    = useState(false);
   const [filterCategory, setFilterCategory] = useState('');
   const [filterUser,     setFilterUser]     = useState('');
   const [filterSearch,   setFilterSearch]   = useState('');
@@ -119,13 +121,23 @@ export default function AuditLogs() {
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout>;
 
+    function clearAssumeTimer() {
+      if (assumeLiveTimer.current) { clearTimeout(assumeLiveTimer.current); assumeLiveTimer.current = null; }
+    }
+
     function connect() {
       setLiveStatus('connecting');
+      clearAssumeTimer();
       const es = apiStream('/api/logs/stream');
       esRef.current = es;
-      es.onopen = () => { if (!cancelled) setLiveStatus('live'); };
+      es.onopen = () => {
+        if (!cancelled) { clearAssumeTimer(); setLiveStatus('live'); }
+      };
       es.onmessage = (e: MessageEvent) => {
         if (cancelled) return;
+        // Firebase CDN may not forward onopen — treat first message as confirmation of live status
+        clearAssumeTimer();
+        setLiveStatus('live');
         const { log } = JSON.parse(e.data) as { log: AuditLogEntry };
         setLogs(prev => {
           if (prev.some(l => l.id === log.id)) return prev;
@@ -133,18 +145,25 @@ export default function AuditLogs() {
         });
       };
       es.onerror = () => {
+        clearAssumeTimer();
         es.close();
         if (!cancelled) {
           setLiveStatus('off');
           reconnectTimer = setTimeout(connect, 5000);
         }
       };
+      // Fallback: if 5 s pass with no onopen/onerror, assume CDN absorbed the open event
+      assumeLiveTimer.current = setTimeout(() => {
+        assumeLiveTimer.current = null;
+        if (!cancelled) setLiveStatus('live');
+      }, 5000);
     }
 
     connect();
     return () => {
       cancelled = true;
       clearTimeout(reconnectTimer);
+      clearAssumeTimer();
       esRef.current?.close();
       esRef.current = null;
     };
@@ -168,7 +187,7 @@ export default function AuditLogs() {
   const uniqueUsers = [...new Set(logs.map(l => l.userEmail))].sort();
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, gap: '16px' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -192,49 +211,69 @@ export default function AuditLogs() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div style={{
-        display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center',
-        padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0',
-        flexShrink: 0,
-      }}>
-        <input
-          type="search"
-          placeholder="Search description, action, user…"
-          value={filterSearch}
-          onChange={e => setFilterSearch(e.target.value)}
-          style={{ ...inputStyle, minWidth: '220px', flex: 1 }}
-        />
-        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={inputStyle}>
-          <option value="">All categories</option>
-          {(['auth', 'employees', 'schedule', 'tasks', 'settings'] as AuditCategory[]).map(c => (
-            <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
-          ))}
-        </select>
-        <select value={filterUser} onChange={e => setFilterUser(e.target.value)} style={inputStyle}>
-          <option value="">All users</option>
-          {uniqueUsers.map(u => <option key={u} value={u}>{u}</option>)}
-        </select>
-        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-          <label style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>From</label>
-          <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} style={inputStyle} />
-        </div>
-        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-          <label style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>To</label>
-          <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} style={inputStyle} />
-        </div>
-        {(filterCategory || filterUser || filterSearch || fromDate || toDate) && (
-          <button
-            onClick={() => { setFilterCategory(''); setFilterUser(''); setFilterSearch(''); setFromDate(''); setToDate(''); }}
-            style={{ ...btnStyle('#fee2e2', '#dc2626'), fontSize: '12px', padding: '5px 10px' }}
-          >
-            ✕ Clear
-          </button>
+      {/* Filters — collapsible */}
+      <div style={{ flexShrink: 0, border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+        {/* Toggle row */}
+        <button
+          onClick={() => setFiltersOpen(o => !o)}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 12px', background: '#f8fafc', border: 'none', cursor: 'pointer',
+            fontSize: '13px', fontWeight: '600', color: '#475569',
+          }}
+        >
+          <span>
+            Filters
+            {(filterCategory || filterUser || filterSearch || fromDate || toDate) && (
+              <span style={{ marginLeft: '6px', background: '#2563eb', color: 'white', borderRadius: '9999px', padding: '1px 7px', fontSize: '11px' }}>
+                active
+              </span>
+            )}
+          </span>
+          <span style={{ fontSize: '11px', color: '#94a3b8' }}>{filtersOpen ? '▲' : '▼'}</span>
+        </button>
+
+        {filtersOpen && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', padding: '12px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+            <input
+              type="search"
+              placeholder="Search description, action, user…"
+              value={filterSearch}
+              onChange={e => setFilterSearch(e.target.value)}
+              style={{ ...inputStyle, minWidth: '220px', flex: 1 }}
+            />
+            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={inputStyle}>
+              <option value="">All categories</option>
+              {(['auth', 'employees', 'schedule', 'tasks', 'settings'] as AuditCategory[]).map(c => (
+                <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+              ))}
+            </select>
+            <select value={filterUser} onChange={e => setFilterUser(e.target.value)} style={inputStyle}>
+              <option value="">All users</option>
+              {uniqueUsers.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <label style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>From</label>
+              <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <label style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>To</label>
+              <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} style={inputStyle} />
+            </div>
+            {(filterCategory || filterUser || filterSearch || fromDate || toDate) && (
+              <button
+                onClick={() => { setFilterCategory(''); setFilterUser(''); setFilterSearch(''); setFromDate(''); setToDate(''); }}
+                style={{ ...btnStyle('#fee2e2', '#dc2626'), fontSize: '12px', padding: '5px 10px' }}
+              >
+                ✕ Clear
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Table */}
-      <div style={{ flex: 1, overflow: 'auto', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+      {/* Table — fixed height showing ~13 rows, then scrolls */}
+      <div style={{ overflowY: 'auto', borderRadius: '8px', border: '1px solid #e2e8f0', maxHeight: '720px' }}>
         {loading ? (
           <div style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>Loading logs…</div>
         ) : error ? (

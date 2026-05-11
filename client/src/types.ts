@@ -95,6 +95,19 @@ export interface AuditLogEntry {
   };
 }
 
+export interface DashboardConfig {
+  hiddenStatCards: string[];
+  hiddenPanels: string[];
+  soldierColumnFilters: Record<string, string[]>; // colKey -> allowed values (empty = no filter)
+  panelOrder?: string[];
+}
+
+export const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
+  hiddenStatCards: [],
+  hiddenPanels: [],
+  soldierColumnFilters: {},
+};
+
 export const DEFAULT_COLUMNS: ColumnDef[] = [
   { key: 'id',         label: 'ID',         visible: true, builtin: true },
   { key: 'name',       label: 'Name',       visible: true, builtin: true },

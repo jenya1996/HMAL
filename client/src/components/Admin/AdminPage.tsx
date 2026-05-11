@@ -470,7 +470,7 @@ export default function AdminPage({ employees }: AdminPageProps) {
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* Tab bar */}
       <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', flexShrink: 0, background: 'white', borderRadius: '12px 12px 0 0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', paddingLeft: '8px' }}>
         <button style={tabBtn('general')} onClick={() => setActiveTab('general')}>General</button>
@@ -480,7 +480,7 @@ export default function AdminPage({ employees }: AdminPageProps) {
 
       {/* Tab content */}
       <div style={{
-        flex: 1, background: 'white', borderRadius: '0 0 12px 12px',
+        flex: 1, minHeight: 0, background: 'white', borderRadius: '0 0 12px 12px',
         boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
         overflow: activeTab === 'logs' ? 'hidden' : 'auto',
         padding: activeTab === 'logs' ? '16px' : '24px',
@@ -489,7 +489,7 @@ export default function AdminPage({ employees }: AdminPageProps) {
         {activeTab === 'general' && <GeneralTab employees={employees} />}
         {activeTab === 'users'   && <UsersTab employees={employees} />}
         {activeTab === 'logs'    && (
-          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <AuditLogs />
           </div>
         )}
