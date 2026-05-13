@@ -137,9 +137,9 @@ function EmptyState({ message }: { message: string }) {
 
 // ─── Drag-and-drop panel IDs ─────────────────────────────────────────────────
 
-type PanelId = 'tasks' | 'on-leave' | 'free-soldiers' | 'returning' | 'departed' | 'absent' | 'departments';
+type PanelId = 'tasks' | 'on-leave' | 'at-base' | 'free-soldiers' | 'returning' | 'departed' | 'absent' | 'departments';
 
-const ALL_PANEL_IDS: PanelId[] = ['tasks', 'on-leave', 'free-soldiers', 'returning', 'departed', 'absent', 'departments'];
+const ALL_PANEL_IDS: PanelId[] = ['tasks', 'on-leave', 'at-base', 'free-soldiers', 'returning', 'departed', 'absent', 'departments'];
 
 const COLLAPSED_H = 290; // ~5 rows
 const EXPANDED_H  = 580; // ~10 rows
@@ -211,13 +211,15 @@ export default function Dashboard({
     filteredSoldiers.filter(e => schedule[e.id]?.[selectedDateKey] === 'home-leave'),
   [filteredSoldiers, schedule, selectedDateKey]);
 
-  const onBaseCount = useMemo(() =>
+  const onBaseSoldiers = useMemo(() =>
     filteredSoldiers.filter(e => {
       if (e.status !== 'Active') return false;
       const cell = schedule[e.id]?.[selectedDateKey];
       return !cell || cell === 'on-base' || cell === 'returning';
-    }).length,
+    }),
   [filteredSoldiers, schedule, selectedDateKey]);
+
+  const onBaseCount = onBaseSoldiers.length;
 
   const taskStatsToday = useMemo(() =>
     taskTemplates.map(t => ({
@@ -392,6 +394,7 @@ export default function Dashboard({
     const panelTitles: Record<PanelId, string> = {
       'tasks':          `${dateLabel}'s Tasks`,
       'on-leave':       'Soldiers at Home',
+      'at-base':        `Soldiers at Base — ${dateLabel}`,
       'free-soldiers':  `Free Soldiers — ${dateLabel}`,
       'returning':      `Returning ${dateLabel} (RTN)`,
       'departed':       `Departed ${dateLabel} (OUT)`,
@@ -401,6 +404,7 @@ export default function Dashboard({
     const panelCounts: Record<PanelId, number | undefined> = {
       'tasks':          taskTemplates.length > 0 ? taskTemplates.length : undefined,
       'on-leave':       onLeaveToday.length || undefined,
+      'at-base':        onBaseSoldiers.length || undefined,
       'free-soldiers':  freeSoldiersToday.length || undefined,
       'returning':      returningToday.length || undefined,
       'departed':       departedToday.length || undefined,
@@ -462,6 +466,12 @@ export default function Dashboard({
       listContent = onLeaveToday.length === 0
         ? <EmptyState message="No soldiers at home today." />
         : onLeaveToday.map(emp => (
+            <SoldierRow key={emp.id} emp={emp} sub={[emp.position, emp.department].filter(Boolean).join(' · ')} />
+          ));
+    } else if (id === 'at-base') {
+      listContent = onBaseSoldiers.length === 0
+        ? <EmptyState message="No soldiers at base today." />
+        : onBaseSoldiers.map(emp => (
             <SoldierRow key={emp.id} emp={emp} sub={[emp.position, emp.department].filter(Boolean).join(' · ')} />
           ));
     } else if (id === 'free-soldiers') {
