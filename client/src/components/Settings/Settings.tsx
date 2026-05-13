@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { ColumnDef, FieldType, TaskTemplate, TaskGroup, DashboardConfig } from '../../types';
 import { useFirestore } from '../../hooks/useFirestore';
 import { DEFAULT_SOLDIER_SORT, SOLDIER_CATEGORY_META } from '../Tasks/Tasks';
+import { PANEL_IDS, PANEL_LABELS } from '../../lib/dashboardPanels';
 
 const IDLE_TIMEOUT_KEY     = 'hmal-idle-timeout-ms';
 const IDLE_TIMEOUT_DEFAULT = 15 * 60 * 1000;
@@ -26,16 +27,6 @@ const STAT_CARD_LABELS: Record<string, string> = {
   'abs':         'ABS Today',
 };
 
-const PANEL_IDS = ['tasks', 'on-leave', 'free-soldiers', 'returning', 'departed', 'absent', 'departments'] as const;
-const PANEL_LABELS: Record<string, string> = {
-  'tasks':         "Today's Tasks",
-  'on-leave':      'Soldiers at Home',
-  'free-soldiers': 'Free Soldiers Today',
-  'returning':     'Returning Today (RTN)',
-  'departed':      'Departed Today (OUT)',
-  'absent':        'Absent Today (ABS)',
-  'departments':   'Active Soldiers by Department',
-};
 
 const PRESET_COLORS = [
   '#2563eb', '#16a34a', '#dc2626', '#ea580c',

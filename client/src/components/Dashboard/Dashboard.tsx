@@ -2,6 +2,7 @@ import { useMemo, useState, useRef, useEffect } from 'react';
 import { Employee, TaskTemplate, TaskAssignments, TaskGroup, DashboardConfig, ColumnDef } from '../../types';
 import { ScheduleData } from '../Schedule/ScheduleCalendar';
 import { getVal } from '../../lib/employeeFilters';
+import { PANEL_IDS, PanelId } from '../../lib/dashboardPanels';
 
 interface DashboardProps {
   employees: Employee[];
@@ -137,9 +138,7 @@ function EmptyState({ message }: { message: string }) {
 
 // ─── Drag-and-drop panel IDs ─────────────────────────────────────────────────
 
-type PanelId = 'tasks' | 'on-leave' | 'at-base' | 'free-soldiers' | 'returning' | 'departed' | 'absent' | 'departments';
-
-const ALL_PANEL_IDS: PanelId[] = ['tasks', 'on-leave', 'at-base', 'free-soldiers', 'returning', 'departed', 'absent', 'departments'];
+const ALL_PANEL_IDS: PanelId[] = [...PANEL_IDS];
 
 const COLLAPSED_H = 290; // ~5 rows
 const EXPANDED_H  = 580; // ~10 rows
