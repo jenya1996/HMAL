@@ -123,3 +123,13 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
   },
   { key: 'status',     label: 'Status',     visible: true, builtin: true },
 ];
+
+export interface SoldierTableState {
+  search: string;
+  filters: Record<string, string>;
+}
+
+export interface ScheduleTableState {
+  search: string;
+  filters: Record<string, string>;
+}
