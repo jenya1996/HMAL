@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiFetch } from './lib/api';
 import LoginPage from './components/Auth/LoginPage';
 import { Employee, ColumnDef, DEFAULT_COLUMNS, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup, DashboardConfig, DEFAULT_DASHBOARD_CONFIG } from './types';
-import { matchesFilters } from './lib/employeeFilters';
 import { useFirestore } from './hooks/useFirestore';
+import { useUserPref } from './hooks/useUserPref';
 import Sidebar from './components/Layout/Sidebar';
 import Header from './components/Layout/Header';
 import Dashboard from './components/Dashboard/Dashboard';
@@ -57,18 +57,17 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
     setCurrentPageState(page);
   }
 
+  const [idleTimeout] = useUserPref<number>('idle-timeout', IDLE_TIMEOUT_DEFAULT);
+  const idleTimeoutRef = useRef(idleTimeout);
+  useEffect(() => { idleTimeoutRef.current = idleTimeout; }, [idleTimeout]);
+
   useEffect(() => {
     let lastActivity = Date.now();
     const resetTimer = () => { lastActivity = Date.now(); };
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'] as const;
     events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
     const interval = setInterval(() => {
-      const stored = localStorage.getItem(IDLE_TIMEOUT_KEY);
-      const parsed = stored ? parseInt(stored, 10) : IDLE_TIMEOUT_DEFAULT;
-      const MIN_TIMEOUT = 5 * 60 * 1000;
-      const MAX_TIMEOUT = 2 * 60 * 60 * 1000;
-      const timeout = (Number.isFinite(parsed) && parsed >= MIN_TIMEOUT && parsed <= MAX_TIMEOUT)
-        ? parsed : IDLE_TIMEOUT_DEFAULT;
+      const timeout = idleTimeoutRef.current;
       if (Date.now() - lastActivity >= timeout) {
         apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
         onSignOut();
@@ -78,10 +77,8 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
       events.forEach(e => window.removeEventListener(e, resetTimer));
       clearInterval(interval);
     };
-  }, [onSignOut]);
+  }, [onSignOut, idleTimeout]);
 
-  const [soldierSearch,  setSoldierSearch]  = useState('');
-  const [soldierFilters, setSoldierFilters] = useState<Record<string, string>>({});
   const [syncError,      setSyncError]      = useState<string | null>(null);
   const [storageWarning, setStorageWarning] = useState(false);
 
@@ -92,7 +89,7 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
   const [taskAssignments,  setTaskAssignments]  = useFirestore<TaskAssignments>('hmal-task-assignments', {});
   const [taskRoles,        setTaskRoles]        = useFirestore<TaskRoles>('hmal-task-roles', {});
   const [taskGroups,       setTaskGroups]       = useFirestore<TaskGroup[]>('hmal-task-groups', []);
-  const [dashboardConfig,  setDashboardConfig]  = useFirestore<DashboardConfig>('hmal-dashboard-config', DEFAULT_DASHBOARD_CONFIG);
+  const [dashboardConfig,  setDashboardConfig]  = useUserPref<DashboardConfig>('dashboard-config', DEFAULT_DASHBOARD_CONFIG);
 
   const migratedDept = useRef(false);
   useEffect(() => {
@@ -125,14 +122,6 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
       window.removeEventListener('hmal-storage-full', onStorageFull);
     };
   }, []);
-
-  const filteredEmployees = useMemo(() => employees.filter(e => {
-    const q = soldierSearch.toLowerCase();
-    const matchSearch = !q ||
-      e.name.toLowerCase().includes(q) ||
-      (e.email ?? '').toLowerCase().includes(q);
-    return matchSearch && matchesFilters(e, soldierFilters, columnDefs);
-  }), [employees, soldierSearch, soldierFilters, columnDefs]);
 
   const handleDeleteSoldiers = useCallback((ids: string[]) => {
     const idsSet = new Set(ids);
@@ -242,22 +231,14 @@ function AppContent({ onSignOut, isAdmin }: { onSignOut: () => void; isAdmin: bo
               columnDefs={columnDefs}
               onUpdate={setEmployees}
               onDeleteSoldiers={handleDeleteSoldiers}
-              search={soldierSearch}
-              onSearchChange={setSoldierSearch}
-              filters={soldierFilters}
-              onFiltersChange={setSoldierFilters}
             />
           )}
           {currentPage === 'schedule' && (
             <ScheduleCalendar
-              employees={filteredEmployees}
+              employees={employees}
               schedule={schedule}
               onUpdate={setSchedule}
               columnDefs={columnDefs}
-              search={soldierSearch}
-              onSearchChange={setSoldierSearch}
-              filters={soldierFilters}
-              onFiltersChange={setSoldierFilters}
             />
           )}
           {currentPage === 'tasks' && (
