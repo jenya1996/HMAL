@@ -1,18 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { Employee, ColumnDef } from '../../types';
-import { getFilterOptions } from '../../lib/employeeFilters';
+import { Employee, ColumnDef, ScheduleTableState } from '../../types';
+import { getFilterOptions, matchesFilters } from '../../lib/employeeFilters';
+import { useUserPref } from '../../hooks/useUserPref';
 
 interface ScheduleCalendarProps {
   employees: Employee[];
   schedule: ScheduleData;
   onUpdate: (schedule: ScheduleData) => void;
   columnDefs: ColumnDef[];
-  search: string;
-  onSearchChange: (v: string) => void;
-  filters: Record<string, string>;
-  onFiltersChange: (f: Record<string, string>) => void;
 }
 
 export type ScheduleData = Record<string, Record<string, CellStatus>>;
@@ -149,8 +146,23 @@ function formatColHeader(d: Date, mode: ViewMode): { top: string; bottom: string
 function rightOf(i: number)  { return (NUM_STATUSES - 1 - i) * SUM_COL_W; }
 function bottomOf(i: number) { return (NUM_STATUSES - 1 - i) * SUM_ROW_H; }
 
-export default function ScheduleCalendar({ employees, schedule, onUpdate, columnDefs, search, onSearchChange, filters, onFiltersChange }: ScheduleCalendarProps) {
+export default function ScheduleCalendar({ employees, schedule, onUpdate, columnDefs }: ScheduleCalendarProps) {
   const today = new Date(); today.setHours(0,0,0,0);
+
+  const [tableState, setTableState] = useUserPref<ScheduleTableState>(
+    'schedule-table-state',
+    { search: '', filters: {} }
+  );
+  const search  = tableState.search;
+  const filters = tableState.filters;
+  function onSearchChange(v: string) { setTableState({ ...tableState, search: v }); }
+  function onFiltersChange(f: Record<string, string>) { setTableState({ ...tableState, filters: f }); }
+
+  const filteredEmployees = employees.filter(e => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || e.name.toLowerCase().includes(q) || (e.email ?? '').toLowerCase().includes(q);
+    return matchSearch && matchesFilters(e, filters, columnDefs);
+  });
 
   const [viewMode, setViewMode]         = useLocalStorage<ViewMode>('schedule-view-mode', 'week');
   const [anchor, setAnchor]             = useState<Date>(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
@@ -204,7 +216,7 @@ export default function ScheduleCalendar({ employees, schedule, onUpdate, column
 
 
   const viewDates      = buildViewDates(viewMode, anchor, customApplied);
-  const activeEmployees = employees.filter(e => e.status === 'Active' || e.status === 'Annexation');
+  const activeEmployees = filteredEmployees.filter(e => e.status === 'Active' || e.status === 'Annexation');
 
   function cellId(empId: string, d: Date) { return `${empId}|${dateKey(d)}`; }
 

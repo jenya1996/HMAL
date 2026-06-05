@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Employee, ColumnDef, TaskTemplate, TaskAssignments, TaskRoles, TaskGroup, DashboardConfig } from '../../types';
 import { ScheduleData } from '../Schedule/ScheduleCalendar';
-import { matchesFilters } from '../../lib/employeeFilters';
 import Dashboard from '../Dashboard/Dashboard';
 import AdminPage from '../Admin/AdminPage';
 import EmployeeList from '../Employees/EmployeeList';
@@ -70,14 +69,6 @@ export default function MobileApp({
   onSignOut,
 }: MobileAppProps) {
   const [page, setPage] = useState<MobilePage>('dashboard');
-  const [soldierSearch,  setSoldierSearch]  = useState('');
-  const [soldierFilters, setSoldierFilters] = useState<Record<string, string>>({});
-
-  const filteredEmployees = employees.filter(e => {
-    const q = soldierSearch.toLowerCase();
-    const matchSearch = !q || e.name.toLowerCase().includes(q) || (e.email ?? '').toLowerCase().includes(q);
-    return matchSearch && matchesFilters(e, soldierFilters, columnDefs);
-  });
 
   const navItems: NavItem[] = isAdmin ? [...BASE_NAV, ADMIN_NAV] : BASE_NAV;
 
@@ -137,22 +128,14 @@ export default function MobileApp({
             columnDefs={columnDefs}
             onUpdate={onUpdateEmployees}
             onDeleteSoldiers={onDeleteSoldiers}
-            search={soldierSearch}
-            onSearchChange={setSoldierSearch}
-            filters={soldierFilters}
-            onFiltersChange={setSoldierFilters}
           />
         )}
         {page === 'schedule' && (
           <ScheduleCalendar
-            employees={filteredEmployees}
+            employees={employees}
             schedule={schedule}
             onUpdate={onUpdateSchedule}
             columnDefs={columnDefs}
-            search={soldierSearch}
-            onSearchChange={setSoldierSearch}
-            filters={soldierFilters}
-            onFiltersChange={setSoldierFilters}
           />
         )}
         {page === 'tasks' && (
