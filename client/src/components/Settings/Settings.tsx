@@ -1,10 +1,10 @@
 import { useState, useRef } from 'react';
+import { useUserPref } from '../../hooks/useUserPref';
 import { ColumnDef, FieldType, TaskTemplate, TaskGroup, DashboardConfig } from '../../types';
 import { useFirestore } from '../../hooks/useFirestore';
 import { DEFAULT_SOLDIER_SORT, SOLDIER_CATEGORY_META } from '../Tasks/Tasks';
 import { PANEL_IDS, PANEL_LABELS } from '../../lib/dashboardPanels';
 
-const IDLE_TIMEOUT_KEY     = 'hmal-idle-timeout-ms';
 const IDLE_TIMEOUT_DEFAULT = 15 * 60 * 1000;
 
 const TIMEOUT_OPTIONS = [
@@ -57,15 +57,11 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   const [activeTab, setActiveTab] = useState<'general' | 'dashboard' | 'soldiers' | 'tasks' | 'justice' | 'stats'>('general');
 
   // ── General tab: session timeout ──────────────────────────────────────────
-  const [idleTimeout, setIdleTimeoutState] = useState<number>(() => {
-    const stored = localStorage.getItem(IDLE_TIMEOUT_KEY);
-    return stored ? parseInt(stored, 10) : IDLE_TIMEOUT_DEFAULT;
-  });
+  const [idleTimeout, setIdleTimeoutPref] = useUserPref<number>('idle-timeout', IDLE_TIMEOUT_DEFAULT);
   const [timeoutSaved, setTimeoutSaved] = useState(false);
 
   function handleTimeoutChange(ms: number) {
-    localStorage.setItem(IDLE_TIMEOUT_KEY, String(ms));
-    setIdleTimeoutState(ms);
+    setIdleTimeoutPref(ms);
     setTimeoutSaved(true);
     setTimeout(() => setTimeoutSaved(false), 2000);
   }
