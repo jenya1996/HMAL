@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
-import { Employee, Department, ColumnDef } from '../../types';
+import { Employee, Department, ColumnDef, SoldierTableState } from '../../types';
 import EmployeeForm from './EmployeeForm';
 import { getVal, getFilterOptions, matchesFilters } from '../../lib/employeeFilters';
+import { useUserPref } from '../../hooks/useUserPref';
 
 interface EmployeeListProps {
   employees: Employee[];
@@ -10,10 +11,6 @@ interface EmployeeListProps {
   columnDefs: ColumnDef[];
   onUpdate: (employees: Employee[]) => void;
   onDeleteSoldiers: (ids: string[]) => void;
-  search: string;
-  onSearchChange: (v: string) => void;
-  filters: Record<string, string>;
-  onFiltersChange: (f: Record<string, string>) => void;
 }
 
 type SortDir = 'asc' | 'desc';
@@ -24,7 +21,16 @@ function sanitizeImportedField(s: string): string {
   return s.replace(/^[=+\-@\t\r]+/, '').trim().slice(0, 200);
 }
 
-export default function EmployeeList({ employees, departments, columnDefs, onUpdate, onDeleteSoldiers, search, onSearchChange, filters, onFiltersChange }: EmployeeListProps) {
+export default function EmployeeList({ employees, departments, columnDefs, onUpdate, onDeleteSoldiers }: EmployeeListProps) {
+  const [tableState, setTableState] = useUserPref<SoldierTableState>(
+    'soldier-table-state',
+    { search: '', filters: {} }
+  );
+  const search  = tableState.search;
+  const filters = tableState.filters;
+  function onSearchChange(v: string) { setTableState({ ...tableState, search: v }); }
+  function onFiltersChange(f: Record<string, string>) { setTableState({ ...tableState, filters: f }); }
+
   const [showForm, setShowForm] = useState(false);
   const [editEmployee, setEditEmployee] = useState<Employee | undefined>(undefined);
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
