@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import authRouter from './routes/auth';
 import dataRouter from './routes/data';
 import logsRouter from './routes/logs';
+import prefsRouter from './routes/prefs';
 import { logger } from './lib/logger';
 
 const app = express();
@@ -52,6 +53,7 @@ app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOStrin
 app.use('/api/auth', authRouter);
 app.use('/api/data', dataRouter);
 app.use('/api/logs', logsRouter);
+app.use('/api/prefs', prefsRouter);
 
 const PORT = process.env.PORT ?? 3001;
 app.listen(PORT, () => logger.log(`Server running on http://localhost:${PORT}`));
