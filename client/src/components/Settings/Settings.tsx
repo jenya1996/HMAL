@@ -104,6 +104,7 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
   });
   const [newColLabel, setNewColLabel] = useState('');
   const [newColType, setNewColType] = useState<FieldType>('text');
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
 
   // Task template form state
   const [tplName, setTplName]         = useState('');
@@ -568,7 +569,7 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
                 {/* Delete */}
                 {!col.builtin && (
                   <button
-                    onClick={e => { e.stopPropagation(); deleteColumn(col.key); }}
+                    onClick={e => { e.stopPropagation(); setConfirmDeleteKey(col.key); }}
                     style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: '13px', cursor: 'pointer', flexShrink: 0 }}
                   >
                     ✕
@@ -959,6 +960,40 @@ export default function Settings({ columnDefs, onUpdateColumns, taskTemplates, o
       )}
 
 
+      {/* Delete column confirmation modal */}
+      {confirmDeleteKey && (() => {
+        const col = columnDefs.find(c => c.key === confirmDeleteKey);
+        return (
+          <div
+            onClick={() => setConfirmDeleteKey(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{ background: 'white', borderRadius: '12px', padding: '28px 32px', maxWidth: '380px', width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', gap: '16px' }}
+            >
+              <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Delete column?</div>
+              <div style={{ fontSize: '14px', color: '#475569', lineHeight: 1.5 }}>
+                <strong>"{col?.label}"</strong> will be permanently removed, along with all its data for every soldier.
+              </div>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setConfirmDeleteKey(null)}
+                  style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#475569', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => { deleteColumn(confirmDeleteKey); setConfirmDeleteKey(null); }}
+                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', background: '#dc2626', color: 'white', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 </div>
     </div>
   );
