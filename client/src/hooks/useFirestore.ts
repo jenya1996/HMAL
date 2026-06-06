@@ -22,11 +22,15 @@ export function useFirestore<T>(key: string, initialValue: T) {
 
   // Tracks the last JSON we set so we don't echo our own writes back
   const lastSeen = useRef<string | null>(null);
+  // Counts in-flight PUTs — poll is skipped while any write is pending to
+  // prevent the server returning a prior version and overwriting local state
+  const pendingWrites = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
 
     function sync() {
+      if (pendingWrites.current > 0) return;
       apiFetch<{ value: T | null }>(`/api/data/${key}`)
         .then(({ value }) => {
           if (cancelled || value === null) return;
@@ -50,6 +54,7 @@ export function useFirestore<T>(key: string, initialValue: T) {
     lastSeen.current = serialized; // suppress echo on next poll
     setStoredValue(value);
     safeLocalSet(key, serialized);
+    pendingWrites.current++;
     apiFetch(`/api/data/${key}`, {
       method: 'PUT',
       body: JSON.stringify({ value }),
@@ -58,6 +63,8 @@ export function useFirestore<T>(key: string, initialValue: T) {
       window.dispatchEvent(new CustomEvent('hmal-sync-error', {
         detail: `Failed to save data. Check your connection and try again.`,
       }));
+    }).finally(() => {
+      pendingWrites.current--;
     });
   };
 
